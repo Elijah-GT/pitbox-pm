@@ -43,7 +43,10 @@ The first run creates a virtual environment and installs dependencies (~30
 seconds), then seeds a demo car with about 60 nodes so there is something to
 click. Delete `pitbox.db` to start over with an empty tree.
 
-Interactive API docs: **http://127.0.0.1:8000/docs**
+The interactive Swagger docs are switched off — see `docs_url` in
+`app/main.py` if you want them while developing. They are off because
+FastAPI mounts them on the app rather than a router, so the auth guard did
+not cover them.
 
 Both run scripts set `PITBOX_AUTH_MODE=none`, because there is no point putting a
 login in front of a laptop. Deployments leave it unset and get the secure

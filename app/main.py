@@ -4,7 +4,7 @@ Run it:
     pip install -r requirements.txt
     uvicorn app.main:app --reload
 
-Then open http://127.0.0.1:8000 . Interactive API docs are at /docs.
+Then open http://127.0.0.1:8000 .
 """
 from __future__ import annotations
 
@@ -70,6 +70,21 @@ app = FastAPI(
     description="Hierarchical part tracking for a Baja SAE vehicle.",
     version="0.1.0",
     lifespan=lifespan,
+    # The interactive docs are OFF.
+    #
+    # FastAPI mounts /docs, /redoc and /openapi.json on the app itself rather
+    # than on a router, so the `dependencies=[Depends(require_member)]` applied
+    # below never touched them: an unauthenticated request got a 403 from
+    # /api/projects and a 200 from /openapi.json, complete with every route and
+    # request schema. No parts data, but a full map of the API for anyone who
+    # found the origin -- and a quiet exception to "protected by default".
+    #
+    # They were only ever a developer convenience, so they are simply removed.
+    # To get them back while working locally, set these to their defaults
+    # ("/docs", "/redoc", "/openapi.json") -- but do not ship that.
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 # Refuse hostnames we do not serve, before anything else looks at the request.
@@ -124,4 +139,4 @@ def index(member: Member | None = Depends(current_member_optional)):  # noqa: AR
         return FileResponse(VITE_DIST / "index.html")
     if STATIC_DIR.exists():
         return FileResponse(STATIC_DIR / "index.html")
-    return {"detail": "No frontend built. Run 'npm run build' in frontend/, or use /docs."}
+    return {"detail": "No frontend built. Run 'npm run build' in frontend/."}

@@ -245,7 +245,10 @@ export default function App() {
     const name = prompt('Name for the new tree (e.g. "Baja 2027 Car"):')
     if (!name?.trim()) return
     const useTemplate = confirm(
-      'Start from the standard Baja subsystem template?\n\nOK = template, Cancel = empty tree.',
+      `Start "${name.trim()}" from the standard Baja subsystem template?\n\n` +
+        'OK = the standard breakdown (Frame, Suspension, Drivetrain...).\n' +
+        'Cancel = an empty tree with just a root node.\n\n' +
+        'Either way this is a NEW tree. Your existing trees are not touched.',
     )
     try {
       const project = await api.createProject({
@@ -253,9 +256,14 @@ export default function App() {
         season: seasonFromName(name),
         template: useTemplate ? 'baja_standard' : 'blank',
       })
-      setProjects(await api.listProjects())
+      const list = await api.listProjects()
+      setProjects(list)
       switchProject(project.id)
-      show(`Created "${project.name}"`)
+      // Say the count, not just the name. A template tree looks identical to
+      // every other template tree at the top two levels, so "Created X" alone
+      // is indistinguishable from having renamed the tree you were looking at.
+      const created = list.find((p) => p.id === project.id)
+      show(`New tree "${project.name}" — ${created?.node_count ?? 0} nodes. Others unchanged.`)
     } catch (err) {
       showError(err)
     }

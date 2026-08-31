@@ -40,9 +40,15 @@ export function TopBar({
         value={projectId ?? ''}
         onChange={(e) => onSwitch(Number(e.target.value))}
       >
+        {/* The node count is here on purpose. Every tree built from the standard
+            template has identical subsystem names, so two different trees look
+            the same until you expand them — switching between them, or creating
+            a new one, otherwise reads as a rename. The count is the one thing
+            that visibly differs. */}
         {projects.map((p) => (
           <option key={p.id} value={p.id}>
-            {p.season ? `${p.name} (${p.season})` : p.name}
+            {p.season ? `${p.name} (${p.season})` : p.name} · {p.node_count}{' '}
+            {p.node_count === 1 ? 'node' : 'nodes'}
           </option>
         ))}
       </select>
@@ -66,9 +72,6 @@ export function TopBar({
           title="Download the BOM as CSV"
         >
           Export CSV
-        </a>
-        <a className="btn btn-ghost" href="/docs" target="_blank" rel="noopener">
-          API
         </a>
 
         {currentUser && (

@@ -267,7 +267,10 @@ async function newProject() {
   const name = prompt('Name for the new tree (e.g. "Baja 2027 Car"):');
   if (!name || !name.trim()) return;
   const useTemplate = confirm(
-    'Start from the standard Baja subsystem template?\n\nOK = template, Cancel = empty tree.'
+    `Start "${name.trim()}" from the standard Baja subsystem template?\n\n` +
+    'OK = the standard breakdown (Frame, Suspension, Drivetrain...).\n' +
+    'Cancel = an empty tree with just a root node.\n\n' +
+    'Either way this is a NEW tree. Your existing trees are not touched.'
   );
   try {
     const project = await api.createProject({
@@ -276,7 +279,10 @@ async function newProject() {
       template: useTemplate ? 'baja_standard' : 'blank',
     });
     await loadProjects(project.id);
-    toast(`Created "${project.name}"`);
+    // Say the count, not just the name: a template tree is indistinguishable
+    // from any other template tree at the top two levels.
+    const created = state.projects.find((p) => p.id === project.id);
+    toast(`New tree "${project.name}" — ${created ? created.node_count : 0} nodes. Others unchanged.`);
   } catch (err) { showError(err); }
 }
 
@@ -301,7 +307,12 @@ async function loadProjects(selectId = null) {
   const picker = document.getElementById('projectPicker');
   picker.replaceChildren();
   for (const p of state.projects) {
-    picker.appendChild(new Option(p.season ? `${p.name} (${p.season})` : p.name, p.id));
+    // Node count included deliberately: every tree built from the standard
+    // template has identical subsystem names, so the count is the only thing
+    // that visibly tells two trees apart in this list.
+    const label = p.season ? `${p.name} (${p.season})` : p.name;
+    const unit = p.node_count === 1 ? 'node' : 'nodes';
+    picker.appendChild(new Option(`${label} · ${p.node_count} ${unit}`, p.id));
   }
   if (!state.projects.length) {
     clearDetail();

@@ -19,7 +19,7 @@ That pushes hard toward:
 
 | Layer | Choice | Why |
 |---|---|---|
-| API | **FastAPI** (Python) | Auto-generates interactive docs at `/docs`, so the API explains itself to the next maintainer. Type hints double as validation. |
+| API | **FastAPI** (Python) | Type hints double as validation, and the route signatures read as the API's documentation. |
 | ORM | **SQLAlchemy 2.0** | The declarative models *are* the schema documentation. Swapping SQLite for Postgres is a connection-string change. |
 | Auth | **Cloudflare Access**, JWT-verified, with a built-in login as fallback | No passwords to manage and no accounts to create, so nothing to hand over at the end of the year. |
 | Validation | **Pydantic v2** | Bad data is rejected at the boundary with a readable error, not 200 rows into a CSV export. |
