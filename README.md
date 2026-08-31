@@ -27,6 +27,9 @@ run `npm run build`):
 
 ...and **http://127.0.0.1:8000**. On macOS / Linux use `./run.sh`.
 
+Both scripts set `PITBOX_AUTH_MODE=none`, because there is no Cloudflare Tunnel
+in front of your laptop. Deployments leave it unset and get the default.
+
 First run creates a virtual environment and installs dependencies (~30 seconds).
 There are two frontends and both work — see [docs/FRONTEND.md](docs/FRONTEND.md)
 for why, and for the note about how Node is installed here.
@@ -51,18 +54,25 @@ else does not. A new member opens the link, Cloudflare emails them a code, and
 they appear in the roster automatically — no account to create, nothing to hand
 over at the end of the year but the Cloudflare login.
 
-Setup is in **[docs/CLOUDFLARE.md](docs/CLOUDFLARE.md)**.
+Identity is proved by **verifying the JWT Cloudflare signs**, not by trusting a
+header — so a forged `Cf-Access-Authenticated-User-Email` gets a 403 no matter
+where the request came from. That is what makes it safe to run somewhere with a
+public URL.
+
+Setup is in **[docs/CLOUDFLARE.md](docs/CLOUDFLARE.md)**, or
+**[docs/FLY.md](docs/FLY.md)** if you have no machine to leave running.
 
 `PITBOX_AUTH_MODE` picks how this works:
 
 | Mode | Meaning |
 |---|---|
-| `cloudflare` *(default)* | Cloudflare Access decides. The app must be reachable only through its tunnel. |
+| `cloudflare` *(default)* | Cloudflare Access decides. Needs `PITBOX_ACCESS_TEAM_DOMAIN` and `PITBOX_ACCESS_AUD`; refuses to start without them. |
 | `password` | Built-in login, for running without Cloudflare. See `scripts/create_user.py`. |
 | `none` | No auth at all. Local development only — `dev.ps1` sets this. |
 
-The default fails closed: reached directly, the app returns 403 rather than
-serving your BOM to whoever found the port.
+The default fails closed twice over: it will not start without the means to
+verify a signature, and once running it returns 403 to anything that does not
+carry one.
 
 ## What it does
 
@@ -93,13 +103,15 @@ dashed pills with a jump-to-source button.
 | `app/tree.py` | All hierarchy mechanics — paths, moves, cloning, tag resolution |
 | `app/routers/` | The API |
 | `app/security.py` | Password hashing, sessions, the guard on every route |
+| `app/access_jwt.py` | Verifies Cloudflare Access tokens — signature, audience, issuer |
 | `frontend/src/lib/filter.ts` | The filtering algorithm (React app) |
 | `static/js/filter.js` | The same algorithm, no-build version |
 | `docs/SCHEMA.md` | Why the tree is stored the way it is |
 | `docs/ARCHITECTURE.md` | Stack rationale and the design decisions behind it |
 | `docs/FRONTEND.md` | The two frontends, and how to run the Vite one |
 | `docs/CLOUDFLARE.md` | Tunnel + Access setup, and the security model |
-| `tests/test_api.py` | 26 tests over the parts that are easy to break |
+| `docs/FLY.md` | Deploying to Fly.io: Dockerfile, volume, no public port |
+| `tests/test_api.py` | 64 tests over the parts that are easy to break |
 
 ## Tests
 

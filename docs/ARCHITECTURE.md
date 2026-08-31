@@ -21,12 +21,12 @@ That pushes hard toward:
 |---|---|---|
 | API | **FastAPI** (Python) | Auto-generates interactive docs at `/docs`, so the API explains itself to the next maintainer. Type hints double as validation. |
 | ORM | **SQLAlchemy 2.0** | The declarative models *are* the schema documentation. Swapping SQLite for Postgres is a connection-string change. |
-| Auth | **Cloudflare Access**, with a built-in login as fallback | No passwords to manage and no accounts to create, so nothing to hand over at the end of the year. |
+| Auth | **Cloudflare Access**, JWT-verified, with a built-in login as fallback | No passwords to manage and no accounts to create, so nothing to hand over at the end of the year. |
 | Validation | **Pydantic v2** | Bad data is rejected at the boundary with a readable error, not 200 rows into a CSV export. |
 | Database | **SQLite** now, **Postgres** later | Zero install, zero admin. Backup is copying one file. Handles a team of 30 without noticing. |
 | Files | Local disk, content-addressed | No S3 account, no credentials to leak, no bill. Abstracted so R2/S3 is a 3-function swap. |
 | Frontend | **React + Vite**, with a no-build fallback | Covered below — there are two, on purpose. |
-| Hosting | One process on one box | `uvicorn app.main:app`. Serves the API *and* the UI on one port. |
+| Hosting | One process on one box | `uvicorn app.main:app`. Serves the API *and* the UI on one port. Containerised for Fly.io in `Dockerfile`; see [FLY.md](FLY.md). |
 
 ### Two frontends, and why both are still here
 
@@ -62,6 +62,7 @@ app/
   schemas.py      Pydantic request/response types = the validation boundary
   tree.py         ALL hierarchy mechanics. Nothing else writes Node.path.
   storage.py      Content-addressed blob store
+  access_jwt.py   Verifies Cloudflare Access tokens (signature, aud, iss, exp)
   seed.py         Baja subsystem template + default tags + demo data
   routers/        projects, nodes, tags, attachments, members
 frontend/         React + TypeScript + Vite (the primary UI)
@@ -71,10 +72,10 @@ frontend/         React + TypeScript + Vite (the primary UI)
   src/components/         TreeView, DetailPanel, FilterBar, ConnectionPicker
 static/           The original no-build UI. Edit and refresh; no toolchain.
   js/filter.js    The same filtering algorithm, vanilla
-tests/            26 tests over the parts that are easy to break
+tests/            64 tests over the parts that are easy to break
 scripts/          backup.py (WAL-safe), gc_blobs.py (reclaim orphan files)
-deploy/           serve.py + Task Scheduler XML for unattended hosting
-docs/             SCHEMA, FRONTEND
+deploy/           serve.py + Task Scheduler XML (Windows), fly-entrypoint.sh
+docs/             SCHEMA, FRONTEND, CLOUDFLARE, FLY
 ```
 
 **The one rule:** nothing outside `app/tree.py` may write `Node.path`, `Node.depth`
@@ -108,16 +109,31 @@ Two modes, because they answer different questions:
 ### Access is somebody else's problem, deliberately
 
 The deployed configuration has **no login code in the request path at all**.
-Cloudflare Access gates the hostname by email domain and passes the verified
-address in a header; the app creates a member record the first time it sees
-someone. That was chosen over building auth for one reason: whoever inherits
-this should not have to run scripts, reset passwords, or remember to remove
-graduating seniors. The only thing handed over is a dashboard login.
+Cloudflare Access gates the hostname by email domain; the app creates a member
+record the first time it sees someone. That was chosen over building auth for
+one reason: whoever inherits this should not have to run scripts, reset
+passwords, or remember to remove graduating seniors. The only thing handed over
+is a dashboard login.
 
-It is safe only because the app binds 127.0.0.1 and a tunnel is the sole route
-in — nothing else can reach it to forge that header. `docs/CLOUDFLARE.md` says
-so loudly, because it is the one assumption that would quietly become false if
-someone "helpfully" bound it to 0.0.0.0.
+**Identity is verified, not assumed.** Cloudflare offers two ways to learn who
+the caller is: a plain `Cf-Access-Authenticated-User-Email` header, and a JWT it
+signs. The header is only trustworthy when the app is physically unreachable
+except through the tunnel. That was true of a laptop bound to 127.0.0.1, and it
+stopped being true the moment this could run on a host that issues its own public
+URL. So `app/access_jwt.py` checks the signature against Cloudflare's published
+keys — plus the audience, so a token minted for a different application on the
+same team is refused — and the email header is ignored entirely.
+
+The difference is worth being precise about: the old design was safe because of
+a property of the deployment, and the new one is safe because of a property of
+the token. Deployment properties get broken by accident a year later, by someone
+who never read the doc explaining why the app binds loopback.
+
+Binding 127.0.0.1 and running behind a tunnel is still the default, and still
+right — defence in depth. It is just no longer load-bearing on its own.
+
+That is what makes `docs/FLY.md` possible: the app can sit on a host with a
+public hostname without that hostname being a way in.
 
 A full built-in login still ships, switched off behind `PITBOX_AUTH_MODE=password`,
 for running without Cloudflare. It is worth knowing how it works even if you

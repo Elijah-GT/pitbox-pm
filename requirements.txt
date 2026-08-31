@@ -4,3 +4,6 @@ sqlalchemy>=2.0.36
 pydantic>=2.9
 pydantic-settings>=2.6
 python-multipart>=0.0.18
+# Verifies Cloudflare Access tokens (app/access_jwt.py). The [crypto] extra
+# pulls in `cryptography`, which is what actually checks the RS256 signature.
+pyjwt[crypto]>=2.9

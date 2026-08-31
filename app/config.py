@@ -23,22 +23,47 @@ class Settings(BaseSettings):
     max_upload_mb: int = 100
 
     # --- who is allowed in ---------------------------------------------------
-    # cloudflare : Cloudflare Access decides. The app trusts the identity in the
-    #              Cf-Access-Authenticated-User-Email header and creates a member
-    #              record the first time it sees someone. No passwords, no
-    #              accounts to create, nothing to hand over but the dashboard.
-    #              REQUIRES the app to be reachable ONLY through the tunnel.
+    # cloudflare : Cloudflare Access decides. The app verifies the JWT that
+    #              Cloudflare signs, then creates a member record the first time
+    #              it sees someone. No passwords, no accounts to create, nothing
+    #              to hand over but the dashboard login.
     # password   : the built-in login (scrypt + sessions). For running without
-    #              Cloudflare — a shop PC, a campus VM behind a VPN.
+    #              Cloudflare -- a shop PC, a campus VM behind a VPN.
     # none       : wide open. Local development only.
     #
     # Defaults to cloudflare so a careless deploy fails closed rather than open.
     # dev.ps1 sets `none` explicitly, because that is what it is for.
     auth_mode: Literal["cloudflare", "password", "none"] = "cloudflare"
 
-    # Cloudflare injects this once an Access policy is in front. Only trustworthy
-    # because cloudflared is the sole route to the app; see docs/CLOUDFLARE.md.
-    access_email_header: str = "Cf-Access-Authenticated-User-Email"
+    # --- Cloudflare Access ---------------------------------------------------
+    # Both of these are REQUIRED in cloudflare mode; the app refuses to start
+    # without them rather than falling back to trusting a header.
+    #
+    # Your Zero Trust team domain. `yourteam` is expanded to
+    # `yourteam.cloudflareaccess.com`, and a full URL is accepted too.
+    access_team_domain: str = ""
+
+    # The Application Audience (AUD) tag, from the Access application's Overview
+    # tab. This is what ties a token to THIS app: without it, a token minted for
+    # any other application on your Cloudflare team would be accepted here.
+    access_aud: str = ""
+
+    # Cloudflare signs a JWT and puts it here. Unlike the email header, this
+    # cannot be forged by anyone who can reach the app -- which is what makes it
+    # safe on a host with a public URL, such as Fly.io.
+    access_jwt_header: str = "Cf-Access-Jwt-Assertion"
+
+    # How long to cache Cloudflare's public keys. They rotate about every six
+    # weeks; an unknown key id triggers an immediate refresh regardless.
+    access_jwks_ttl_seconds: int = 3600
+
+    # --- host allowlist ------------------------------------------------------
+    # Comma-separated hostnames that may be used to reach the app; empty means
+    # any. Set it to your real hostname on a host that also gives you a public
+    # URL you did not ask for (fly.dev, onrender.com), so that URL is refused
+    # before a request touches anything. Defence in depth: JWT verification is
+    # what actually stops a forged identity.
+    allowed_hosts: str = ""
 
     session_days: int = 30
 
@@ -53,6 +78,10 @@ class Settings(BaseSettings):
     blocked_extensions: tuple[str, ...] = (
         ".exe", ".dll", ".bat", ".cmd", ".com", ".scr", ".msi", ".ps1", ".sh", ".jar",
     )
+
+    @property
+    def allowed_host_list(self) -> list[str]:
+        return [h.strip() for h in self.allowed_hosts.split(",") if h.strip()]
 
     @property
     def max_upload_bytes(self) -> int:

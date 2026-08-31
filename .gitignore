@@ -80,6 +80,15 @@ pnpm-debug.log*
 # `npm ci` reproducible for whoever inherits this next year.
 
 # ─────────────────────────────────────────────────────────────
+# Fly.io
+# ─────────────────────────────────────────────────────────────
+# flyctl's local scratch directory.
+.fly/
+
+# The storage archive made by hand when migrating data to the volume.
+storage.tgz
+
+# ─────────────────────────────────────────────────────────────
 # Editors and OS
 # ─────────────────────────────────────────────────────────────
 .vscode/*

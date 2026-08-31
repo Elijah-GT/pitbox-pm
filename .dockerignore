@@ -1,0 +1,59 @@
+# Keep the build context small and, more importantly, keep live data out of the
+# image. Without this, `fly deploy` would bake a copy of the team's database and
+# every uploaded CAD file into a layer -- and then the volume would mount over
+# it, so you would never notice.
+
+# --- runtime data (never goes in an image) ---
+pitbox.db
+pitbox.db-wal
+pitbox.db-shm
+pitbox.db-journal
+*.sqlite
+*.sqlite3
+storage/
+backups/
+deploy/logs/
+
+# --- secrets and local config ---
+.env
+.env.*
+!.env.example
+*.pem
+
+# --- built and installed artefacts (rebuilt inside the image) ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- not needed at runtime ---
+.git/
+.gitignore
+.github/
+tests/
+docs/
+OPERATIONS.md
+OPERATIONS-hosting.md
+*.md
+
+# Windows-only hosting bits: Task Scheduler XML, the PowerShell installers and
+# serve.py have no meaning in a container.
+deploy/*.xml
+deploy/*.ps1
+deploy/serve.py
+deploy/cloudflared-config.example.yml
+dev.ps1
+run.ps1
+run.sh
+
+# --- editors and OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+.claude/

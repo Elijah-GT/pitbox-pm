@@ -12,12 +12,14 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from fastapi import Depends
 from fastapi.responses import RedirectResponse
 
+from .access_jwt import get_verifier
 from .config import BASE_DIR, settings
 from .database import SessionLocal, engine
 from .migrate import run_migrations
@@ -39,10 +41,22 @@ async def lifespan(_app: FastAPI):
     # create_all builds missing tables but never alters existing ones, so adding
     # the login columns needs this for anyone with a database already.
     run_migrations(engine)
+    log = logging.getLogger("pitbox")
     if settings.auth_mode == "none":
-        logging.getLogger("pitbox").warning(
+        log.warning(
             "PITBOX_AUTH_MODE=none -- there is NO authentication. Fine on a "
             "laptop, never on anything reachable from outside this machine."
+        )
+    if settings.auth_mode == "cloudflare":
+        # Fail loudly at boot rather than per-request. A misconfigured instance
+        # that refuses to start is a five-minute fix; one that starts and quietly
+        # trusts nobody looks like a network problem for an afternoon.
+        # get_verifier() raises AccessConfigError when the two settings are
+        # missing, and nothing here falls back to header trust.
+        verifier = get_verifier()
+        log.info(
+            "Cloudflare Access enabled: issuer=%s aud=%s...",
+            verifier.issuer, verifier.audience[:8],
         )
     with SessionLocal() as db:
         ensure_default_tags(db)
@@ -57,6 +71,12 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Refuse hostnames we do not serve, before anything else looks at the request.
+# On Fly.io this is what makes the *.fly.dev URL a dead end: the app is reachable
+# there, but it answers 400 to everything. Off by default (empty = any host).
+if settings.allowed_host_list:
+    app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.allowed_host_list)
 
 # Auth first, and unguarded — you cannot require a session to sign in.
 app.include_router(auth.router)

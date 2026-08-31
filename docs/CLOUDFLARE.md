@@ -12,19 +12,35 @@ their email, they stop being able to get a code.
 
 ---
 
-## The security model, in one paragraph
+## The security model
 
 Read this before changing anything about how the app is started.
 
-Pit Box binds **127.0.0.1** — it accepts connections only from its own machine.
-`cloudflared` runs on that machine, dials *out* to Cloudflare, and is the sole
-route in. Cloudflare enforces your Access policy, then adds a
-`Cf-Access-Authenticated-User-Email` header, and the app trusts it.
+Cloudflare Access proves identity twice over, and the app relies on the half that
+cannot be faked:
 
-That trust is only safe because nothing else can reach the app to set that
-header. **If you ever bind it to `0.0.0.0`, forward the port, or put it on the
-LAN, anyone who can reach the port can forge that header and walk in as anybody.**
-No port is ever opened by this setup — that is the point of a tunnel.
+* **`Cf-Access-Jwt-Assertion`** carries a token Cloudflare signed with a private
+  key only they hold. Pit Box verifies that signature against their published
+  public keys, plus the audience (this application specifically), the issuer
+  (your team) and the expiry. Forging one is not a matter of sending the right
+  header — it means forging a signature.
+* **`Cf-Access-Authenticated-User-Email`** is a plain header. Anyone who can
+  reach the app can set it. **Pit Box ignores it entirely.**
+
+That second point is the important one. An earlier version of this app trusted
+the email header and was safe only because it bound `127.0.0.1` and cloudflared
+was the sole route in. That assumption is easy to break by accident — binding
+`0.0.0.0`, forwarding a port, or deploying to a host that hands out a public URL
+of its own — and when it breaks, it breaks silently and completely. Verifying the
+signature removes the assumption instead of documenting it.
+
+Binding to loopback is still the right default, and the tunnel still means no
+port is ever opened. It is just no longer the only thing standing between your
+BOM and a one-line `curl`.
+
+**This needs two settings.** `PITBOX_ACCESS_TEAM_DOMAIN` and `PITBOX_ACCESS_AUD`,
+below. Without them the app refuses to start rather than falling back to trusting
+a header.
 
 ---
 
@@ -32,29 +48,51 @@ No port is ever opened by this setup — that is the point of a tunnel.
 
 - A domain on Cloudflare. Around $10/yr at cost from Cloudflare Registrar; a
   subdomain like `pitbox.yourteam.org` is fine.
-- A machine that stays on, with Pit Box running.
+- A machine that stays on, with Pit Box running. If you do not have one,
+  [FLY.md](FLY.md) runs the same setup on Fly.io instead — same Access
+  application, same policy, no machine of your own.
 - A free Cloudflare Zero Trust plan — covers 50 users.
 
 ---
 
 ## Part 1 — on the machine
 
-**1. Build the UI and run the app on localhost.**
+**1. Build the UI.**
 
 ```powershell
 cd frontend; npm run build; cd ..
+```
+
+Do not start the app yet — it needs two values that Part 2 produces. Come back
+here after the Access application exists.
+
+**1b. Once you have them,** put them in `.env` (see `.env.example`):
+
+```
+PITBOX_ACCESS_TEAM_DOMAIN=yourteam.cloudflareaccess.com
+PITBOX_ACCESS_AUD=<the 64-character Application Audience tag>
+```
+
+then run:
+
+```powershell
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-`PITBOX_AUTH_MODE` defaults to `cloudflare`, so there is nothing to set. Confirm:
+`PITBOX_AUTH_MODE` defaults to `cloudflare`, so there is nothing else to set.
+Confirm:
 
 ```powershell
 curl.exe http://127.0.0.1:8000/api/health
 # {"status":"ok","team":"MESA ARC Racing","auth_mode":"cloudflare"}
 ```
 
-Hitting it directly now returns **403** with a message about Access. That is
-correct — it means the app refuses anything that did not come through the tunnel.
+If it exits immediately complaining about `PITBOX_ACCESS_TEAM_DOMAIN`, those two
+values are missing. The app will not start in this mode without the means to
+verify a signature — the alternative would be starting up and trusting anything.
+
+Hitting it directly now returns **403**. That is correct: no Cloudflare token,
+no entry, and no email header will change that.
 
 **2. Install cloudflared and sign in.**
 
@@ -126,7 +164,13 @@ Cloudflare emails a code. That is enough. If your school uses Google Workspace
 or Microsoft 365, adding it under **Settings → Authentication** gives one-click
 sign-in instead of a code.
 
-**7.** Save the application.
+**7.** Save the application, then open its **Overview** tab and copy the
+**Application Audience (AUD) Tag** — 64 hex characters. That is the
+`PITBOX_ACCESS_AUD` from Part 1b, and it is what stops a token Cloudflare minted
+for some *other* application on your team from being accepted here.
+
+Your team domain is on **Settings → Custom Pages**, or in the URL of the login
+page: `yourteam.cloudflareaccess.com`.
 
 **8. Verify it actually blocks.** Open the URL in a private window. You should
 get a Cloudflare login prompt, *not* Pit Box. Try a personal email — it must be
@@ -166,13 +210,20 @@ scoped to the path `/api/health`. It reveals only that the service is up.
 **Local development** has no tunnel, so `dev.ps1` sets `PITBOX_AUTH_MODE=none`
 and runs with no auth at all. That is fine on your own machine and nowhere else.
 
+**No machine to leave running?** [FLY.md](FLY.md) puts the same thing on Fly.io,
+with cloudflared inside the container and a volume for the database.
+
 ---
 
 ## If it breaks
 
 | Symptom | Cause |
 |---|---|
-| 403 "No Cloudflare Access identity" | Reached the app without going through the tunnel, or no Access policy is attached to the hostname |
+| The app exits at startup with `AccessConfigError` | `PITBOX_ACCESS_TEAM_DOMAIN` or `PITBOX_ACCESS_AUD` is not set |
+| 403 "No verified Cloudflare Access token" | Reached the app without going through the tunnel, or no Access policy is attached to the hostname |
+| 403 "issued for a different Access application" | `PITBOX_ACCESS_AUD` belongs to another Access app |
+| 403 "issued by a different Cloudflare team" | `PITBOX_ACCESS_TEAM_DOMAIN` is wrong |
+| 503 "Cannot reach Cloudflare to verify sign-in" | The machine cannot fetch Cloudflare's public keys |
 | Cloudflare login appears, then 502 | Tunnel is up, app is not — start uvicorn |
 | Login prompt loops | Session duration too short, or the browser is blocking third-party cookies |
 | Everyone gets in, including outsiders | The application in Part 2 was never created, or its domain does not exactly match the hostname |

@@ -30,11 +30,21 @@ from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
+from .access_jwt import (
+    AccessConfigError,
+    AccessKeysUnavailable,
+    InvalidAccessToken,
+    get_verifier,
+)
 from .config import settings
 from .database import get_db
 from .models import Member, Session, utcnow
 
 COOKIE_NAME = "pitbox_session"
+
+# Cloudflare sets this on the browser after a successful Access login. It holds
+# the same signed token as the Cf-Access-Jwt-Assertion header.
+ACCESS_COOKIE_NAME = "CF_Authorization"
 
 # scrypt cost. n=2**14 with r=8 needs 128*n*r = 16 MB and takes ~100 ms, which
 # is the usual interactive-login target: unnoticeable to a person, punishing to
@@ -158,26 +168,14 @@ def clear_session_cookie(response: Response) -> None:
 
 # --- request dependencies ----------------------------------------------------
 
-def member_from_access_header(request: Request, db: DbSession) -> Member | None:
-    """Identity supplied by Cloudflare Access.
+def upsert_access_member(db: DbSession, email: str) -> Member:
+    """Find or create the member for a Cloudflare-verified email address.
 
-    Cloudflare terminates the request, checks it against your Access policy, and
-    injects the verified email. The app trusts that header -- which is safe for
-    exactly one reason: cloudflared is the ONLY route to this process. The app
-    binds 127.0.0.1, so nothing can reach it without going through the tunnel,
-    and nothing else can set that header.
-
-    If you ever bind this to 0.0.0.0, or publish the port, that assumption dies
-    and anyone can forge the header. See docs/CLOUDFLARE.md.
-
-    Members are created on first sight, which is the point of this mode: a new
+    Members appear on first sight, which is the point of this mode: a new
     teammate with a school email signs in and is simply there, in the assignee
     list too, with nobody creating an account for them.
     """
-    email = request.headers.get(settings.access_email_header, "").strip().lower()
-    if not email:
-        return None
-
+    email = email.strip().lower()
     member = db.scalar(select(Member).where(func.lower(Member.email) == email))
     if member is None:
         # Name it after the local part until they edit it -- "e.carter" beats
@@ -197,13 +195,51 @@ def member_from_access_header(request: Request, db: DbSession) -> Member | None:
     return member
 
 
+def member_from_access_jwt(request: Request, db: DbSession) -> Member | None:
+    """Identity proved by Cloudflare's signature, not by a header we hope is real.
+
+    The `Cf-Access-Authenticated-User-Email` header is deliberately ignored.
+    Trusting it is only safe when nothing but the tunnel can reach the app, and
+    that stops being true the moment this is deployed somewhere with its own
+    public hostname -- Fly.io hands out a *.fly.dev URL whether you want one or
+    not. A signature holds up either way, so that is what gets checked.
+
+    See app/access_jwt.py for what is verified, and docs/CLOUDFLARE.md for the
+    two settings this needs.
+    """
+    token = (
+        request.headers.get(settings.access_jwt_header)
+        # Browsers navigating directly carry the same token as a cookie. Reading
+        # it too means /api/health-style links and plain page loads behave the
+        # same as XHR, with no separate code path to get wrong.
+        or request.cookies.get(ACCESS_COOKIE_NAME)
+    )
+    if not token:
+        return None
+
+    try:
+        email = get_verifier().email_from(token)
+    except AccessConfigError as exc:
+        # Startup should have caught this, so reaching here means the settings
+        # were changed underneath a running process.
+        raise HTTPException(500, str(exc)) from exc
+    except AccessKeysUnavailable as exc:
+        # Our problem, not the caller's: say so with a 5xx so a monitor pages
+        # someone instead of a member being told they are not allowed in.
+        raise HTTPException(503, f"Cannot reach Cloudflare to verify sign-in. {exc}") from exc
+    except InvalidAccessToken as exc:
+        raise HTTPException(403, f"Cloudflare Access token rejected: it {exc}") from exc
+
+    return upsert_access_member(db, email)
+
+
 def current_member_optional(request: Request, db: DbSession = Depends(get_db)) -> Member | None:
     """Resolve who is making this request, according to the configured mode."""
     if settings.auth_mode == "none":
         return _local_dev_member(db)
 
     if settings.auth_mode == "cloudflare":
-        return member_from_access_header(request, db)
+        return member_from_access_jwt(request, db)
 
     # password mode: the built-in session cookie
     token = request.cookies.get(COOKIE_NAME)
@@ -253,13 +289,15 @@ def require_member(member: Member | None = Depends(current_member_optional)) -> 
     if member is not None:
         return member
     if settings.auth_mode == "cloudflare":
-        # Almost always a misconfiguration rather than a signed-out user: either
-        # the tunnel is bypassed, or no Access policy is attached to the hostname.
+        # Almost always a misconfiguration rather than a signed-out user: the
+        # hostname was reached without going through Cloudflare, or no Access
+        # application is attached to it. A forged email header lands here too,
+        # which is the entire point.
         raise HTTPException(
             403,
-            "No Cloudflare Access identity on this request. This app must be "
-            "reached through its Cloudflare Tunnel with an Access policy "
-            "attached. For local use, set PITBOX_AUTH_MODE=none.",
+            "No verified Cloudflare Access token on this request. Reach this app "
+            "through the hostname your Access application protects, not through "
+            "its origin URL. For local use, set PITBOX_AUTH_MODE=none.",
         )
     raise HTTPException(401, "Not signed in.")
 

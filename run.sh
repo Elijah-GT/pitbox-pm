@@ -10,5 +10,10 @@ if [ ! -d .venv ]; then
   ./.venv/bin/python -m pip install -r requirements.txt
 fi
 
+# Local run, so no Cloudflare Tunnel is in front: run wide open. Production
+# leaves PITBOX_AUTH_MODE unset, which defaults to cloudflare and then
+# requires the two PITBOX_ACCESS_* values -- see docs/CLOUDFLARE.md.
+export PITBOX_AUTH_MODE=none
+
 echo "Pit Box running at http://127.0.0.1:8000"
 exec ./.venv/bin/python -m uvicorn app.main:app --reload --port 8000

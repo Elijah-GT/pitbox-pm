@@ -1,0 +1,93 @@
+# Fly.io configuration for Pit Box.
+#
+# This file describes the RECOMMENDED deployment: no public port at all.
+# cloudflared runs inside the container, dials out to Cloudflare, and is the only
+# route in -- exactly the model the tunnel gave us on a local machine, except the
+# machine is now Fly's and stays on without anyone maintaining it.
+#
+# The consequence worth understanding: because no service is published here, Fly
+# never allocates a public IP, so `pitbox.fly.dev` resolves to nothing. There is
+# no origin URL to find and no Access check to bypass. See docs/FLY.md.
+#
+# Change `app` to whatever `fly apps create` gave you.
+
+app = "pitbox"
+primary_region = "dfw"          # pick one near the team: fly platform regions
+
+[build]
+
+[env]
+  PITBOX_AUTH_MODE = "cloudflare"
+
+  # Four slashes: sqlite:/// is the scheme, then /data/pitbox.db is an absolute
+  # path. Three slashes would make it relative and put the database inside the
+  # container, where it is destroyed on every deploy.
+  PITBOX_DATABASE_URL = "sqlite:////data/pitbox.db"
+  PITBOX_STORAGE_DIR = "/data/storage"
+
+  # Loopback only. cloudflared is in the same container, so it can still reach
+  # the app, and nothing else on the internet can.
+  PITBOX_HOST = "127.0.0.1"
+  PITBOX_PORT = "8000"
+
+  PITBOX_COOKIE_SECURE = "true"
+
+  # Set these two with `fly secrets set` or fill them in here -- they are
+  # identifiers, not credentials, so either is fine:
+  #   PITBOX_ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"
+  #   PITBOX_ACCESS_AUD = "<Application Audience tag>"
+  #
+  # The app refuses to start without them rather than falling back to trusting
+  # a header. If a deploy crash-loops, `fly logs` will say exactly this.
+
+# The database and every uploaded file live here. Create it once:
+#   fly volumes create pitbox_data --size 3 --region dfw
+[[mounts]]
+  source = "pitbox_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+# SQLite tolerates exactly one writer, so this app must never run two machines.
+# `immediate` stops the old machine before starting the new one: a few seconds of
+# downtime on deploy, in exchange for never having two processes on one database
+# file. Keep `fly scale count 1`.
+[deploy]
+  strategy = "immediate"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ALTERNATIVE: publish a public port instead of running the tunnel
+# ─────────────────────────────────────────────────────────────────────────────
+# Simpler to operate -- no tunnel token, no second process -- but it gives the
+# app a public `*.fly.dev` hostname that you cannot remove. That URL is then a
+# door into your origin, and two things stop it being a way in:
+#
+#   1. JWT verification. A request that did not come through Cloudflare has no
+#      signed token, so it gets a 403 no matter what headers it sends.
+#   2. PITBOX_ALLOWED_HOSTS. Anything addressed to the .fly.dev name is refused
+#      with a 400 before it reaches a route.
+#
+# To use this instead: delete the [[mounts]]-adjacent PITBOX_HOST above (set it
+# to 0.0.0.0), add PITBOX_ALLOWED_HOSTS, uncomment this block, and point your
+# hostname at the app with a proxied CNAME to <app>.fly.dev.
+#
+#   PITBOX_HOST = "0.0.0.0"
+#   PITBOX_ALLOWED_HOSTS = "pitbox.yourteam.org"
+#
+# [http_service]
+#   internal_port = 8000
+#   force_https = true
+#   # Never sleep: an app that has to cold-start makes Access logins time out,
+#   # and there is no traffic pattern here worth optimising for.
+#   auto_stop_machines = false
+#   auto_start_machines = true
+#   min_machines_running = 1
+#
+#   # A TCP check, not HTTP: every HTTP route either needs an Access token or is
+#   # blocked by the host allowlist, so an HTTP check would fail by design.
+#   [[http_service.tcp_checks]]
+#     interval = "30s"
+#     timeout = "5s"

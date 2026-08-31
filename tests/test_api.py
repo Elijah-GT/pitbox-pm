@@ -629,19 +629,73 @@ def test_cannot_deactivate_the_last_admin(client):
 
 
 # --- auth modes ---------------------------------------------------------------
-# The default deployment is Cloudflare Access: no accounts, no passwords, the
-# identity arrives in a header that only the tunnel can set.
-
+# The default deployment is Cloudflare Access: no accounts, no passwords, and
+# an identity proved by a signature rather than asserted by a header. These
+# tests mint their own tokens with a throwaway RSA key and hand the verifier
+# the matching public key, so nothing here touches the network.
 import contextlib  # noqa: E402
+import time  # noqa: E402
 
+import jwt as pyjwt  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+
+from app import access_jwt  # noqa: E402
 from app.config import settings  # noqa: E402
 
-ACCESS_HEADER = "Cf-Access-Authenticated-User-Email"
+EMAIL_HEADER = "Cf-Access-Authenticated-User-Email"
+JWT_HEADER = "Cf-Access-Jwt-Assertion"
+
+TEAM_DOMAIN = "testteam.cloudflareaccess.com"
+ISSUER = f"https://{TEAM_DOMAIN}"
+AUD = "a" * 64          # Access AUD tags are 64 hex characters
+KID = "test-key-1"
+
+_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+_WRONG_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+def make_token(email="member@school.edu", *, key=None, aud=AUD, issuer=ISSUER,
+               expires_in=3600, kid=KID, **extra):
+    """A token shaped exactly like the ones Cloudflare Access issues."""
+    now = int(time.time())
+    claims = {"aud": [aud], "iss": issuer, "iat": now, "exp": now + expires_in,
+              "sub": "test-subject", "type": "app"}
+    if email is not None:
+        claims["email"] = email
+    claims.update(extra)
+    return pyjwt.encode(claims, key or _PRIVATE_KEY, algorithm="RS256",
+                        headers={"kid": kid})
+
+
+@contextlib.contextmanager
+def cloudflare_mode():
+    """Switch to cloudflare mode with a verifier that trusts our test key.
+
+    _fetched_at and _last_attempt are pinned to now so the verifier considers
+    its key set fresh and never tries to reach Cloudflare.
+    """
+    previous = (settings.auth_mode, settings.access_team_domain, settings.access_aud)
+    settings.auth_mode = "cloudflare"  # type: ignore[assignment]
+    settings.access_team_domain = TEAM_DOMAIN
+    settings.access_aud = AUD
+    access_jwt.reset_verifier()
+
+    verifier = access_jwt.get_verifier()
+    jwk_dict = pyjwt.algorithms.RSAAlgorithm.to_jwk(_PRIVATE_KEY.public_key(), as_dict=True)
+    jwk_dict.update({"kid": KID, "alg": "RS256", "use": "sig"})
+    verifier._keys = {KID: pyjwt.PyJWK.from_dict(jwk_dict)}
+    verifier._fetched_at = time.monotonic()
+    verifier._last_attempt = time.monotonic()
+    try:
+        yield verifier
+    finally:
+        (settings.auth_mode, settings.access_team_domain,
+         settings.access_aud) = previous  # type: ignore[assignment]
+        access_jwt.reset_verifier()
 
 
 @contextlib.contextmanager
 def auth_mode(mode: str):
-    """Flip the mode for one test. settings is read live, so this is enough."""
     previous = settings.auth_mode
     settings.auth_mode = mode  # type: ignore[assignment]
     try:
@@ -650,21 +704,40 @@ def auth_mode(mode: str):
         settings.auth_mode = previous  # type: ignore[assignment]
 
 
-def test_cloudflare_mode_accepts_the_access_header(anon):
-    with auth_mode("cloudflare"):
-        res = anon.get("/api/auth/me", headers={ACCESS_HEADER: "Newbie@School.EDU"})
-        assert res.status_code == 200
+# --- the happy path -----------------------------------------------------------
+
+def test_cloudflare_mode_accepts_a_validly_signed_token(anon):
+    with cloudflare_mode():
+        res = anon.get("/api/auth/me",
+                       headers={JWT_HEADER: make_token("Newbie@School.EDU")})
+        assert res.status_code == 200, res.text
         body = res.json()
         # Created on first sight — nobody had to make them an account.
         assert body["email"] == "newbie@school.edu"
         assert body["name"] == "Newbie"
-        assert anon.get("/api/projects", headers={ACCESS_HEADER: "newbie@school.edu"}).status_code == 200
+        assert anon.get("/api/projects",
+                        headers={JWT_HEADER: make_token("newbie@school.edu")}
+                        ).status_code == 200
+
+
+def test_cloudflare_mode_reads_the_token_from_the_cookie_too(anon):
+    """A browser navigating to the app carries CF_Authorization, not the header."""
+    with cloudflare_mode():
+        anon.cookies.set("CF_Authorization", make_token("cookie-user@school.edu"))
+        try:
+            res = anon.get("/api/auth/me")
+            assert res.status_code == 200, res.text
+            assert res.json()["email"] == "cookie-user@school.edu"
+        finally:
+            anon.cookies.delete("CF_Authorization")
 
 
 def test_cloudflare_mode_reuses_the_same_member_on_return_visits(anon):
-    with auth_mode("cloudflare"):
-        first = anon.get("/api/auth/me", headers={ACCESS_HEADER: "repeat@school.edu"}).json()
-        second = anon.get("/api/auth/me", headers={ACCESS_HEADER: "REPEAT@school.edu"}).json()
+    with cloudflare_mode():
+        first = anon.get("/api/auth/me",
+                         headers={JWT_HEADER: make_token("repeat@school.edu")}).json()
+        second = anon.get("/api/auth/me",
+                          headers={JWT_HEADER: make_token("REPEAT@school.edu")}).json()
         assert first["id"] == second["id"], "email match must be case-insensitive"
 
 
@@ -674,42 +747,172 @@ def test_cloudflare_mode_links_to_an_existing_roster_member(client, anon):
     existing = client.post("/api/members", json={
         "name": "Already Here", "email": "already@school.edu", "subteam": "Brakes",
     }).json()
-    with auth_mode("cloudflare"):
-        seen = anon.get("/api/auth/me", headers={ACCESS_HEADER: "already@school.edu"}).json()
+    with cloudflare_mode():
+        seen = anon.get("/api/auth/me",
+                        headers={JWT_HEADER: make_token("already@school.edu")}).json()
     assert seen["id"] == existing["id"]
     assert seen["name"] == "Already Here"     # not overwritten
     assert seen["subteam"] == "Brakes"
 
 
-def test_cloudflare_mode_refuses_a_request_with_no_access_header(anon):
-    """No header means the tunnel was bypassed or no policy is attached.
-    Fail closed, and say which."""
-    with auth_mode("cloudflare"):
-        res = anon.get("/api/projects")
-        assert res.status_code == 403
-        assert "Cloudflare Access" in res.json()["detail"]
+# --- the forgeries this whole module exists to stop ---------------------------
 
+def test_a_forged_email_header_alone_gets_nothing(anon):
+    """THE test. On Fly.io the app has a public *.fly.dev URL, so anyone can
+    send whatever headers they like. Without a signature it must be worthless."""
+    with cloudflare_mode():
+        res = anon.get("/api/projects", headers={EMAIL_HEADER: "attacker@evil.com"})
+        assert res.status_code == 403
+        assert "verified" in res.json()["detail"].lower()
+
+
+def test_the_email_header_cannot_override_the_signed_token(anon):
+    """Send a real token for one person and a header naming another. The
+    signature wins; the header is not consulted at all."""
+    with cloudflare_mode():
+        res = anon.get("/api/auth/me", headers={
+            JWT_HEADER: make_token("real@school.edu"),
+            EMAIL_HEADER: "attacker@evil.com",
+        })
+        assert res.status_code == 200
+        assert res.json()["email"] == "real@school.edu"
+
+
+def test_a_token_signed_by_the_wrong_key_is_refused(anon):
+    """Same key id, different private key: the shape is right, the maths is not."""
+    with cloudflare_mode():
+        res = anon.get("/api/projects",
+                       headers={JWT_HEADER: make_token(key=_WRONG_KEY)})
+        assert res.status_code == 403
+        assert "rejected" in res.json()["detail"]
+
+
+def test_a_token_for_another_access_application_is_refused(anon):
+    """A valid Cloudflare token minted for a different app on the same team.
+    Without the aud check this would sail through."""
+    with cloudflare_mode():
+        res = anon.get("/api/projects", headers={JWT_HEADER: make_token(aud="b" * 64)})
+        assert res.status_code == 403
+        assert "different Access application" in res.json()["detail"]
+
+
+def test_a_token_from_another_cloudflare_team_is_refused(anon):
+    with cloudflare_mode():
+        res = anon.get("/api/projects", headers={
+            JWT_HEADER: make_token(issuer="https://evil.cloudflareaccess.com")})
+        assert res.status_code == 403
+        assert "different Cloudflare team" in res.json()["detail"]
+
+
+def test_an_expired_token_is_refused(anon):
+    with cloudflare_mode():
+        res = anon.get("/api/projects",
+                       headers={JWT_HEADER: make_token(expires_in=-60)})
+        assert res.status_code == 403
+        assert "expired" in res.json()["detail"]
+
+
+def test_garbage_in_the_jwt_header_is_refused_not_crashed(anon):
+    with cloudflare_mode():
+        for junk in ("not-a-jwt", "a.b.c", "Bearer " + make_token()):
+            res = anon.get("/api/projects", headers={JWT_HEADER: junk})
+            assert res.status_code == 403, junk
+
+
+def test_a_service_token_is_refused_because_it_has_no_person(anon):
+    with cloudflare_mode():
+        res = anon.get("/api/projects", headers={
+            JWT_HEADER: make_token(email=None, common_name="ci-runner.access"),
+        })
+        assert res.status_code == 403
+        assert "service token" in res.json()["detail"]
+
+
+def test_an_unsigned_none_algorithm_token_is_refused(anon):
+    """The classic JWT attack: strip the signature and set alg to none."""
+    with cloudflare_mode():
+        now = int(time.time())
+        forged = pyjwt.encode(
+            {"aud": [AUD], "iss": ISSUER, "iat": now, "exp": now + 3600,
+             "email": "attacker@evil.com"},
+            key="", algorithm="none", headers={"kid": KID},
+        )
+        res = anon.get("/api/projects", headers={JWT_HEADER: forged})
+        assert res.status_code == 403
+
+
+# --- configuration ------------------------------------------------------------
+
+def test_cloudflare_mode_refuses_to_run_without_a_team_and_aud():
+    """No silent fallback to header trust. Missing config is a hard error."""
+    with auth_mode("cloudflare"):
+        previous = (settings.access_team_domain, settings.access_aud)
+        settings.access_team_domain = ""
+        settings.access_aud = ""
+        access_jwt.reset_verifier()
+        try:
+            with pytest.raises(access_jwt.AccessConfigError):
+                access_jwt.get_verifier()
+        finally:
+            settings.access_team_domain, settings.access_aud = previous
+            access_jwt.reset_verifier()
+
+
+@pytest.mark.parametrize("given", [
+    "myteam",
+    "myteam.cloudflareaccess.com",
+    "https://myteam.cloudflareaccess.com",
+    "https://myteam.cloudflareaccess.com/",
+    "  MyTeam  ",
+])
+def test_team_domain_accepts_whatever_shape_you_paste(given):
+    assert access_jwt.normalize_team_domain(given) == "myteam.cloudflareaccess.com"
+
+
+# --- the other modes ----------------------------------------------------------
 
 def test_built_in_login_is_disabled_outside_password_mode(anon):
-    with auth_mode("cloudflare"):
+    with cloudflare_mode():
         assert anon.get("/login").status_code == 404
         assert anon.post("/api/auth/login",
                          json={"email": "a@b.c", "password": "x"}).status_code == 404
 
 
-def test_health_reports_the_mode(anon):
-    with auth_mode("cloudflare"):
-        assert anon.get("/api/health").json()["auth_mode"] == "cloudflare"
+def test_health_reports_the_mode_without_a_token(anon):
+    """Health stays public so `fly status` works, and leaks nothing but the mode."""
+    with cloudflare_mode():
+        body = anon.get("/api/health").json()
+        assert body["auth_mode"] == "cloudflare"
+        assert set(body) == {"status", "team", "auth_mode"}
 
 
-def test_none_mode_is_open_and_needs_no_header(anon):
+def test_none_mode_is_open_and_needs_no_token(anon):
     with auth_mode("none"):
         assert anon.get("/api/projects").status_code == 200
         assert anon.get("/api/auth/me").json()["email"] == "local@localhost"
 
 
-def test_password_mode_ignores_the_access_header(anon):
+def test_password_mode_ignores_both_cloudflare_headers(anon):
     """A forged header must not grant anything when the app is not behind
     Cloudflare — otherwise switching modes would open a hole."""
-    res = anon.get("/api/projects", headers={ACCESS_HEADER: "attacker@evil.com"})
+    res = anon.get("/api/projects", headers={
+        EMAIL_HEADER: "attacker@evil.com",
+        JWT_HEADER: "irrelevant",
+    })
     assert res.status_code == 401
+
+
+@pytest.mark.parametrize("raw,expected", [
+    ("", []),
+    ("pitbox.yourteam.org", ["pitbox.yourteam.org"]),
+    ("a.org, b.org ,, c.org ", ["a.org", "b.org", "c.org"]),
+])
+def test_allowed_hosts_parsing(raw, expected):
+    """Comma-separated rather than JSON, because this is typed into fly.toml by
+    hand and `["a"]` in a TOML string is a miserable thing to get wrong."""
+    previous = settings.allowed_hosts
+    settings.allowed_hosts = raw
+    try:
+        assert settings.allowed_host_list == expected
+    finally:
+        settings.allowed_hosts = previous

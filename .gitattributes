@@ -1,20 +1,37 @@
 # Line endings.
 #
-# This repo is developed on Windows but run.sh has to work on macOS and Linux.
-# Without the rule below git would store it with CRLF, and bash fails with
-# "bad interpreter: /bin/bash^M" — a genuinely confusing error for whoever
-# clones it on a Mac.
+# This repo is developed on Windows but has to work on macOS, Linux, and now
+# inside a Linux container — which is where CRLF causes failures that look like
+# anything but a line-ending problem:
+#
+#   * a shell script with CRLF fails as "bad interpreter: /bin/bash^M"
+#   * a .dockerignore with CRLF leaves a stray \r on every pattern, so `storage/`
+#     stops matching and the team's live database gets baked into the image
+#
+# `core.autocrlf=true` (set on this machine) hands CRLF back on checkout, so the
+# files that must not have it are pinned explicitly. `eol=lf` wins over autocrlf.
 
 # Normalize everything to LF inside the repository; check out native.
 * text=auto
 
-# Shell scripts must keep LF in the working tree too, on every platform.
+# Anything a Unix shell or Docker executes or parses must keep LF in the working
+# tree too, on every platform.
 *.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
 
-# PowerShell and batch stay CRLF, which is what Windows tooling expects.
+# PowerShell, batch and the Task Scheduler XML stay CRLF, which is what Windows
+# tooling expects.
 *.ps1 text eol=crlf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.xml text eol=crlf
+
+# A generated lockfile: collapse it in diffs and keep it out of language stats.
+frontend/package-lock.json linguist-generated=true -diff
 
 # Never touch binaries.
 *.png binary
@@ -31,6 +48,5 @@
 *.step binary
 *.stp binary
 *.stl binary
-
-# Generated — collapse it in diffs and don't count it in language stats.
-frontend/package-lock.json linguist-generated=true -diff
+*.sldprt binary
+*.sldasm binary
