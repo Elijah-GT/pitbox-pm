@@ -13,7 +13,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PITBOX_", env_file=".env", extra="ignore")
 
-    team_name: str = "MESA ARC Racing"
+    # Shown in the page title and /api/health. Set PITBOX_TEAM_NAME to your own.
+    team_name: str = "Baja SAE Team"
 
     # sqlite:///./pitbox.db for a laptop or a small shop server.
     # postgresql+psycopg://user:pass@host/db when you outgrow it — nothing else changes.

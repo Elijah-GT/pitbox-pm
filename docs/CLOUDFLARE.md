@@ -27,16 +27,17 @@ cannot be faked:
 * **`Cf-Access-Authenticated-User-Email`** is a plain header. Anyone who can
   reach the app can set it. **Pit Box ignores it entirely.**
 
-That second point is the important one. An earlier version of this app trusted
-the email header and was safe only because it bound `127.0.0.1` and cloudflared
-was the sole route in. That assumption is easy to break by accident — binding
-`0.0.0.0`, forwarding a port, or deploying to a host that hands out a public URL
-of its own — and when it breaks, it breaks silently and completely. Verifying the
-signature removes the assumption instead of documenting it.
+The second point is the one worth dwelling on. Trusting the email header is a
+common shortcut — Cloudflare's own quickstarts show it — and it is safe only
+while the app is genuinely unreachable except through the tunnel. That condition
+is easy to break by accident: binding `0.0.0.0`, forwarding a port, or moving to
+a host that hands out a public URL of its own. When it breaks it breaks silently
+and completely, and the app carries on looking fine.
 
-Binding to loopback is still the right default, and the tunnel still means no
-port is ever opened. It is just no longer the only thing standing between your
-BOM and a one-line `curl`.
+Verifying the signature removes the assumption instead of documenting it.
+Binding to loopback is still the right default and the tunnel still means no port
+is ever opened — that is defence in depth. It is just no longer the only thing
+standing between the parts list and a one-line `curl`.
 
 **This needs two settings.** `PITBOX_ACCESS_TEAM_DOMAIN` and `PITBOX_ACCESS_AUD`,
 below. Without them the app refuses to start rather than falling back to trusting
@@ -84,7 +85,7 @@ Confirm:
 
 ```powershell
 curl.exe http://127.0.0.1:8000/api/health
-# {"status":"ok","team":"MESA ARC Racing","auth_mode":"cloudflare"}
+# {"status":"ok","team":"Your Team Name","auth_mode":"cloudflare"}
 ```
 
 If it exits immediately complaining about `PITBOX_ACCESS_TEAM_DOMAIN`, those two

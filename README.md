@@ -1,78 +1,69 @@
 # Pit Box
 
-Part tracking and project management for the MESA ARC Racing Baja SAE team.
+Part tracking and project management for a Baja SAE team.
 
 Break the car down into a tree — **Vehicle → Subsystem → Assembly → Part** — as
 deep as you need. Attach datasheets, CAD, PCB files and firmware to the exact part
 they belong to. Tag anything, including whole branches. Then filter the tree down
 to just what you care about.
 
-## Run it
+Built for the way a student team actually works: a third of the roster leaves
+every year, nobody inherits a handover document, and whoever picks it up next
+should not have to maintain accounts or run scripts to keep it alive.
 
-**React + Vite UI, with hot reload** — starts the API and the frontend together:
+---
 
-```powershell
-.\dev.ps1
+## Try it in two minutes
+
+You need **Python 3.11+**. Node is optional — see [Frontends](#frontends).
+
+```bash
+git clone https://github.com/Elijah-GT/pitbox-pm.git
 ```
 
-Then open **http://localhost:5173**. (Use `localhost`, not `127.0.0.1` — Vite
-binds to the IPv6 loopback.)
+```bash
+cd pitbox-pm
+```
 
-**Backend only**, serving the no-build UI (or the built React app if you have
-run `npm run build`):
+Windows:
 
 ```powershell
 .\run.ps1
 ```
 
-...and **http://127.0.0.1:8000**. On macOS / Linux use `./run.sh`.
+macOS / Linux:
 
-Both scripts set `PITBOX_AUTH_MODE=none`, because there is no Cloudflare Tunnel
-in front of your laptop. Deployments leave it unset and get the default.
+```bash
+./run.sh
+```
 
-First run creates a virtual environment and installs dependencies (~30 seconds).
-There are two frontends and both work — see [docs/FRONTEND.md](docs/FRONTEND.md)
-for why, and for the note about how Node is installed here.
+Then open **http://127.0.0.1:8000**.
 
-Doing it by hand:
+The first run creates a virtual environment and installs dependencies (~30
+seconds), then seeds a demo car with about 60 nodes so there is something to
+click. Delete `pitbox.db` to start over with an empty tree.
+
+Interactive API docs: **http://127.0.0.1:8000/docs**
+
+Both run scripts set `PITBOX_AUTH_MODE=none`, because there is no point putting a
+login in front of a laptop. Deployments leave it unset and get the secure
+default — see [Access](#access).
+
+<details>
+<summary>Doing it by hand instead</summary>
+
 ```bash
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements.txt   # .venv/bin/python on mac/linux
 .venv/Scripts/python -m uvicorn app.main:app --reload
 ```
 
-The first launch seeds a demo car (the 2026 season, ~60 nodes) so there is
-something to click. Delete `pitbox.db` to start over.
+Set `PITBOX_AUTH_MODE=none` in the environment first (`$env:PITBOX_AUTH_MODE="none"`
+in PowerShell, `export PITBOX_AUTH_MODE=none` in bash), or the app will refuse to
+start without Cloudflare Access configured. The run scripts do this for you.
+</details>
 
-Interactive API docs: **http://127.0.0.1:8000/docs**
-
-## Access
-
-Pit Box does not manage passwords. It runs behind **Cloudflare Access**, which
-gates the URL by email domain: anyone with a school address gets in, everyone
-else does not. A new member opens the link, Cloudflare emails them a code, and
-they appear in the roster automatically — no account to create, nothing to hand
-over at the end of the year but the Cloudflare login.
-
-Identity is proved by **verifying the JWT Cloudflare signs**, not by trusting a
-header — so a forged `Cf-Access-Authenticated-User-Email` gets a 403 no matter
-where the request came from. That is what makes it safe to run somewhere with a
-public URL.
-
-Setup is in **[docs/CLOUDFLARE.md](docs/CLOUDFLARE.md)**, or
-**[docs/FLY.md](docs/FLY.md)** if you have no machine to leave running.
-
-`PITBOX_AUTH_MODE` picks how this works:
-
-| Mode | Meaning |
-|---|---|
-| `cloudflare` *(default)* | Cloudflare Access decides. Needs `PITBOX_ACCESS_TEAM_DOMAIN` and `PITBOX_ACCESS_AUD`; refuses to start without them. |
-| `password` | Built-in login, for running without Cloudflare. See `scripts/create_user.py`. |
-| `none` | No auth at all. Local development only — `dev.ps1` sets this. |
-
-The default fails closed twice over: it will not start without the means to
-verify a signature, and once running it returns 403 to anything that does not
-carry one.
+---
 
 ## What it does
 
@@ -93,7 +84,81 @@ dashed pills with a jump-to-source button.
 - **Isolate** — prune the tree to matches plus the ancestors needed to reach them
 - **Highlight** — keep the whole tree, dim everything that does not match
 
+**Connections.** A gutter down the right-hand side links every part sharing a
+value you pick — tag, vendor, material, assignee — even across different
+subsystems. Relationships that indentation cannot show.
+
 **Export.** `Export CSV` gives you a flat, indented BOM for the cost report.
+
+---
+
+## Deploying it for your team
+
+Two supported routes. Both put **Cloudflare Access** in front, so there are no
+passwords to manage and no accounts to create — a new member with a school email
+signs in and appears in the roster automatically.
+
+| | Guide | Needs |
+|---|---|---|
+| A machine you can leave on | [docs/CLOUDFLARE.md](docs/CLOUDFLARE.md) | a PC that stays powered, a domain |
+| No machine to leave on | [docs/FLY.md](docs/FLY.md) | a Fly.io account, a domain |
+
+Both need a domain on Cloudflare (~$10/yr at cost from Cloudflare Registrar) and
+a free Cloudflare Zero Trust plan, which covers 50 users. Budget about an hour,
+most of it clicking in a dashboard.
+
+### Access
+
+Identity is proved by **verifying the JWT Cloudflare signs**, not by trusting the
+`Cf-Access-Authenticated-User-Email` header. A forged header gets a 403 no matter
+where the request came from — which is what makes it safe to run somewhere with a
+public URL rather than only behind a tunnel.
+
+`PITBOX_AUTH_MODE` picks how this works:
+
+| Mode | Meaning |
+|---|---|
+| `cloudflare` *(default)* | Cloudflare Access decides. Needs `PITBOX_ACCESS_TEAM_DOMAIN` and `PITBOX_ACCESS_AUD`; refuses to start without them. |
+| `password` | Built-in login (scrypt + revocable sessions), for running without Cloudflare. See `scripts/create_user.py`. |
+| `none` | No auth at all. Local development only — the run scripts set this. |
+
+The default fails closed twice over: it will not start without the means to
+verify a signature, and once running it returns 403 to anything not carrying one.
+
+### Backups
+
+`pitbox.db` runs in WAL mode, so **copying that file alone can silently lose most
+of your data** — recent writes live in `pitbox.db-wal` until SQLite checkpoints.
+Use the script, which uses SQLite's online backup API and prints row counts:
+
+```bash
+python scripts/backup.py --keep 20
+```
+
+---
+
+## Frontends
+
+There are two, both talking to the same API, and both work:
+
+| | `frontend/` (React 19 + TS + Vite) | `static/` (no build) |
+|---|---|---|
+| Served at | `/` once built | `/static/` always |
+| Needs Node | yes | no |
+| Guide lines + connection gutter | yes | no |
+
+`static/` exists so the app still runs on a machine with Python and nothing else.
+For hot reload while developing the React app:
+
+```powershell
+.\dev.ps1
+```
+
+That starts the API on **:8000** and Vite on **:5173** — open
+**http://localhost:5173** (`localhost`, not `127.0.0.1`; Vite binds the IPv6
+loopback). Details in [docs/FRONTEND.md](docs/FRONTEND.md).
+
+---
 
 ## Where things are
 
@@ -111,17 +176,27 @@ dashed pills with a jump-to-source button.
 | `docs/FRONTEND.md` | The two frontends, and how to run the Vite one |
 | `docs/CLOUDFLARE.md` | Tunnel + Access setup, and the security model |
 | `docs/FLY.md` | Deploying to Fly.io: Dockerfile, volume, no public port |
-| `tests/test_api.py` | 64 tests over the parts that are easy to break |
+| `tests/test_api.py` | 67 tests over the parts that are easy to break |
+
+**The one rule:** nothing outside `app/tree.py` may write `Node.path`,
+`Node.depth` or `Node.position`. Route every structural change through those
+functions and the denormalized path cache stays consistent.
 
 ## Tests
 
 ```bash
 .venv/Scripts/python -m pip install -r requirements-dev.txt
+```
+
+```bash
 .venv/Scripts/python -m pytest tests -q
 ```
 
-## Customizing it for your team
+---
 
+## Making it yours
+
+- **Team name** — `PITBOX_TEAM_NAME`, in `.env` or your host's environment
 - **Subsystem template** — `BAJA_TEMPLATE` in `app/seed.py`, a plain nested list
 - **Default tags** — `DEFAULT_TAGS` in the same file
 - **Statuses** — `STATUSES` in `app/models.py` and the matching `Status` literal in
@@ -130,3 +205,9 @@ dashed pills with a jump-to-source button.
 - **Colors** — the CSS variables at the top of `static/app.css` and
   `frontend/src/styles.css`
 
+Copy `.env.example` to `.env` to change any setting; every one has a working
+default, and the app runs with no `.env` at all.
+
+Nothing in the schema is Baja-specific beyond the seed template — it is a tree of
+parts with tags, files and statuses, so it adapts to Formula SAE, a rocketry
+team, or any other project that decomposes into assemblies.

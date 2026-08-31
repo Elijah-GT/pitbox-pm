@@ -8,8 +8,9 @@
 #   * a .dockerignore with CRLF leaves a stray \r on every pattern, so `storage/`
 #     stops matching and the team's live database gets baked into the image
 #
-# `core.autocrlf=true` (set on this machine) hands CRLF back on checkout, so the
-# files that must not have it are pinned explicitly. `eol=lf` wins over autocrlf.
+# Git on Windows is often configured with `core.autocrlf=true`, which hands CRLF
+# back on checkout. The files that must not have it are pinned explicitly below;
+# `eol=lf` wins over autocrlf.
 
 # Normalize everything to LF inside the repository; check out native.
 * text=auto

@@ -30,10 +30,10 @@ That pushes hard toward:
 
 ### Two frontends, and why both are still here
 
-The original build used **vanilla ES modules with no build step at all**, because
-this machine had no Node, no npm and no Docker — only Python. For a team that
-loses a third of its members a year, "clone it and hit refresh" is a real
-advantage over a toolchain that can rot.
+The original build used **vanilla ES modules with no build step at all**. That
+was not a limitation to work around: plenty of shop and lab machines have Python
+and nothing else, and for a team that loses a third of its members a year,
+"clone it and hit refresh" is a real advantage over a toolchain that can rot.
 
 React + Vite was added later, deliberately, and the old UI was kept rather than
 deleted:
@@ -72,7 +72,7 @@ frontend/         React + TypeScript + Vite (the primary UI)
   src/components/         TreeView, DetailPanel, FilterBar, ConnectionPicker
 static/           The original no-build UI. Edit and refresh; no toolchain.
   js/filter.js    The same filtering algorithm, vanilla
-tests/            64 tests over the parts that are easy to break
+tests/            67 tests over the parts that are easy to break
 scripts/          backup.py (WAL-safe), gc_blobs.py (reclaim orphan files)
 deploy/           serve.py + Task Scheduler XML (Windows), fly-entrypoint.sh
 docs/             SCHEMA, FRONTEND, CLOUDFLARE, FLY

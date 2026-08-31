@@ -1,49 +1,54 @@
 # Deploying Pit Box to Fly.io
 
-For when there is no machine you can realistically leave on. Fly runs the
+For teams with no machine they can realistically leave switched on. Fly runs the
 container, a Fly volume holds the database and the uploaded files, and Cloudflare
 Access still decides who gets in.
 
-Read [CLOUDFLARE.md](CLOUDFLARE.md) first if you have not — this document assumes
-you know what an Access application is.
+Read [CLOUDFLARE.md](CLOUDFLARE.md) first — this document assumes you know what
+an Access application is and why the app verifies a signature rather than a
+header.
+
+**Everything below is done once, in about an hour**, most of it clicking in the
+Cloudflare dashboard.
 
 ---
 
 ## What changes, and why
 
-Running on your own machine, the app was safe because it was **unreachable**. It
-bound `127.0.0.1`, no port was open, and cloudflared was the only way in. That is
-what made it fine to trust a header saying who you were: nobody else could set it.
+On a machine of your own, an app behind a tunnel is safe because it is
+**unreachable**: it binds `127.0.0.1`, no port is open, and cloudflared is the
+only way in. That is what would make it fine to trust a header saying who you
+are — nobody else can set it.
 
-A normal Fly app breaks that assumption completely. Fly gives you
-`yourapp.fly.dev`, and it is public. Anyone could then run:
+A normal Fly app breaks that assumption completely. Fly gives every app a public
+`yourapp.fly.dev` hostname, so anyone could run:
 
 ```bash
 curl -H 'Cf-Access-Authenticated-User-Email: whoever@wherever' \
      https://yourapp.fly.dev/api/projects
 ```
 
-and walk straight past Access with your entire BOM in the response. So two things
-changed:
+and walk straight past Access with the entire parts list in the response. Two
+things prevent that:
 
-**1. The app now verifies Cloudflare's signature.** The email header is ignored
+**1. The app verifies Cloudflare's signature.** The email header is ignored
 outright. Instead, `Cf-Access-Jwt-Assertion` carries a JWT that Cloudflare signed
 with a private key only they hold, and `app/access_jwt.py` checks it against
 their published public keys — plus the audience, the issuer, and the expiry. A
 forged header has no signature and gets a 403 no matter where it came from.
 
-**2. This deployment publishes no port at all.** cloudflared moved *into* the
+**2. This deployment publishes no port at all.** cloudflared runs *inside* the
 container. It dials out to Cloudflare from inside the Fly machine, so Fly never
 allocates a public IP and `yourapp.fly.dev` resolves to nothing.
 
 Either one of those would be enough. Both is the point: the tunnel means there is
 no door, and the signature means the door would be locked anyway.
 
-### "So do we drop cloudflared?"
+### "So is cloudflared still needed?"
 
-No — it moves. Your assumption was that with no local machine there is nowhere to
-run it, but the Fly container is a machine, and running it there keeps the
-property that made the original design safe. You do get a choice:
+It moves rather than disappearing. With no local machine there seems to be
+nowhere to run it — but the Fly container is a machine, and running it there
+keeps the property that makes the design safe. There is a choice:
 
 | | **Tunnel in the container** (recommended, and what `fly.toml` does) | **Public Fly service** |
 |---|---|---|
@@ -57,7 +62,7 @@ better, and costs one `fly secrets set`.
 
 ---
 
-## Answering the direct question: can you block the .fly.dev URL?
+## Can the .fly.dev URL be blocked?
 
 **You cannot delete the hostname.** Fly assigns `<app>.fly.dev` to every app and
 there is no setting that removes it.
@@ -125,8 +130,16 @@ hostname is live without a policy.
 
 ### 3. Fly: create the app and the volume
 
+Run every `fly` command **from the repository root**, not from wherever your
+terminal opened. flyctl reads `fly.toml` from the working directory, and without
+it you get `the config for your app is missing an app name` — which does not
+obviously mean "you are in the wrong folder".
+
 ```bash
 fly auth login
+```
+
+```bash
 fly apps create pitbox
 ```
 
@@ -144,13 +157,12 @@ The region must match `primary_region` in `fly.toml`.
 ### 4. Fly: set the secrets
 
 ```bash
-fly secrets set TUNNEL_TOKEN="<the token from step 1>"
-fly secrets set PITBOX_ACCESS_TEAM_DOMAIN="yourteam.cloudflareaccess.com"
-fly secrets set PITBOX_ACCESS_AUD="<the AUD tag from step 2>"
+fly secrets set TUNNEL_TOKEN="<the token from step 1>" PITBOX_ACCESS_TEAM_DOMAIN="yourteam.cloudflareaccess.com" PITBOX_ACCESS_AUD="<the AUD tag from step 2>" PITBOX_TEAM_NAME="Your Team Name"
 ```
 
-Only the first is really a secret; the other two are identifiers and could live
-in `fly.toml` instead. Keeping them together is simply easier to remember.
+Only the first is really a secret; the rest are plain settings and could live in
+`fly.toml` under `[env]` instead. Setting them together is simply fewer steps —
+and each `fly secrets set` triggers a redeploy, so one call is faster than four.
 
 ### 5. Deploy
 
@@ -178,15 +190,19 @@ curl -i -H 'Cf-Access-Authenticated-User-Email: attacker@evil.com' \
 ```
 
 Expected: no IPs, the .fly.dev request fails to connect at all, and the forged
-header gets **403**. Do all three — the third is the one that would have handed
-over the BOM before this change.
+header gets **403**. Run all three before sharing the link — the third is the
+request that a header-trusting deployment would answer with the whole parts list.
 
 ---
 
-## Moving your existing data across
+## Moving existing data across
 
-The first deploy seeds a fresh demo car. If you have real work in the local
-database, move it before sharing the link.
+Skip this if the Fly instance is the first place you have run Pit Box — the
+first deploy seeds a demo car and there is nothing to migrate.
+
+If you have been running locally and have real work in `pitbox.db`, move it
+**before sharing the link**. Importing overwrites the database on the volume, so
+doing it after teammates start adding parts destroys their work.
 
 ```powershell
 # 1. WAL-safe snapshot. Do NOT just copy pitbox.db -- most of your recent work
@@ -209,10 +225,9 @@ fly ssh console -C "sh -c 'cd /data && rm -f pitbox.db-wal pitbox.db-shm && tar 
 fly apps restart pitbox
 ```
 
-Then load the app and check the node count matches what you had. Do this while
-nobody is using it — you are replacing a database file underneath a running
-process, which is safe when there are no writers and nothing you want to repeat
-mid-season.
+Then load the app and check the node count matches. Do this while nobody is
+using it: you are replacing a database file underneath a running process, which
+is safe when there are no writers and is not something to repeat mid-season.
 
 ---
 

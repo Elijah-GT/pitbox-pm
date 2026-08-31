@@ -26,27 +26,28 @@ Note the URL is `localhost`, not `127.0.0.1` — Vite binds to the IPv6 loopback
 by default and `127.0.0.1:5173` will refuse the connection. Use `--host` if you
 want it reachable from another machine on the shop network.
 
-## Node is installed portably
+## Installing Node
 
-The Node MSI requires administrator rights, which weren't available here, so
-Node lives unpacked under:
-
-```
-%LOCALAPPDATA%\nodejs\node-v24.19.0-win-x64\
-```
-
-`dev.ps1` finds it and puts it on PATH **for that session only** — your system
-PATH is untouched. Two consequences:
-
-- Running `npm` in a plain terminal will say "command not found". Either use
-  `dev.ps1`, or add that folder to your PATH permanently.
-- To remove Node entirely, delete that one folder.
-
-To install it properly system-wide later (from an admin terminal):
+Node 20 or newer. On Windows:
 
 ```powershell
 winget install OpenJS.NodeJS.LTS
 ```
+
+That needs administrator rights. **If you cannot elevate** — locked-down lab and
+shop machines often cannot — download the official Windows `.zip` from
+<https://nodejs.org/en/download>, unpack it somewhere you can write, and add that
+folder to your PATH. No installer, no admin, and uninstalling is deleting the
+folder.
+
+`dev.ps1` supports exactly that: it looks for an unpacked Node under
+`%LOCALAPPDATA%\nodejs\` and puts it on PATH **for that session only**, leaving
+your system PATH untouched. The trade-off is that `npm` on its own in a plain
+terminal will then say "command not found" — use `dev.ps1`, or add the folder to
+your PATH permanently.
+
+If you never intend to touch the React app you do not need Node at all. The
+`static/` UI has no build step; see the table above.
 
 ## Building for production
 
