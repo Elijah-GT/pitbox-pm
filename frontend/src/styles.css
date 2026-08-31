@@ -1,6 +1,6 @@
 /* Pit Box.
    Dark-only by design: this is a shop tool that lives on a screen next to the
-   car, and the team identity is dark. Dirt-orange accent, Oswald + Inter. */
+   car, and the team identity is dark. Red/blue/white accents, Oswald + Inter. */
 
 :root {
   --bg: #0e0f12;
@@ -10,9 +10,26 @@
   --text: #f2f3f5;
   --text-dim: #aab0bc;
   --text-muted: #767d8c;
-  --accent: #ff6a1a;
-  --accent-2: #ffb547;
-  --accent-soft: rgba(255, 106, 26, 0.12);
+  /* Red / blue / white.
+     Blue carries every interactive affordance -- buttons, focus, active
+     toggles -- because red already means danger here, and a red primary button
+     is indistinguishable from a delete button.
+     Red is identity only: the wordmark and the vehicle badge, neither of which
+     is clickable. --accent-2 is the HOVER state of the primary button, so it
+     has to be a lighter blue rather than a contrasting colour. */
+  --accent: #3b82f6;
+  --accent-2: #60a5fa;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --brand: #ef2b45;
+  /* Small red text needs a lighter tint to clear 4.5:1 on this
+     background -- same reason the subsystem and assembly badges are
+     light tints rather than saturated hues. */
+  --brand-dim: #ff8b96;
+  /* Foreground for text sitting ON an accent background. Dark rather
+     than white: white on #3b82f6 is 3.7:1, which fails AA, while this
+     is 5.1:1. Neutral-cool, not the warm near-black the orange theme
+     used -- that reads muddy over blue. */
+  --on-accent: #0b1220;
   --border: #2a2e37;
   --radius: 12px;
   --radius-sm: 8px;
@@ -85,7 +102,7 @@ a {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: var(--accent);
+  color: var(--brand);
   white-space: nowrap;
 }
 .brand em {
@@ -170,7 +187,7 @@ a {
 .btn-primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #14100c;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .btn-primary:hover {
@@ -213,7 +230,7 @@ a {
 }
 .segmented button.active {
   background: var(--accent);
-  color: #14100c;
+  color: var(--on-accent);
   font-weight: 600;
 }
 
@@ -278,7 +295,7 @@ a {
   border-color: #3a404b;
 }
 .chip[aria-pressed='true'] {
-  color: #14100c;
+  color: var(--on-accent);
   font-weight: 600;
   border-color: transparent;
 }
@@ -525,8 +542,8 @@ a {
   flex: none;
 }
 .node-type-badge[data-type='vehicle'] {
-  color: var(--accent-2);
-  border-color: #4a3a1e;
+  color: var(--brand-dim);
+  border-color: #5c1f28;
 }
 .node-type-badge[data-type='subsystem'] {
   color: #8b9dff;
@@ -722,7 +739,7 @@ a {
   padding: 3px 8px;
   border-radius: 999px;
   font-size: 0.78rem;
-  color: #14100c;
+  color: var(--on-accent);
   font-weight: 600;
 }
 .tag-pill.inherited {

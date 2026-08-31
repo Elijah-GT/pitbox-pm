@@ -1,4 +1,4 @@
-/* Pit Box. Dark racing theme: dirt-orange accent,
+/* Pit Box. Dark racing theme: red/blue/white accents,
    Oswald + Inter. Kept in sync with frontend/src/styles.css. */
 
 :root {
@@ -9,9 +9,26 @@
   --text: #f2f3f5;
   --text-dim: #aab0bc;
   --text-muted: #767d8c;
-  --accent: #ff6a1a;
-  --accent-2: #ffb547;
-  --accent-soft: rgba(255, 106, 26, 0.12);
+  /* Red / blue / white.
+     Blue carries every interactive affordance -- buttons, focus, active
+     toggles -- because red already means danger here, and a red primary button
+     is indistinguishable from a delete button.
+     Red is identity only: the wordmark and the vehicle badge, neither of which
+     is clickable. --accent-2 is the HOVER state of the primary button, so it
+     has to be a lighter blue rather than a contrasting colour. */
+  --accent: #3b82f6;
+  --accent-2: #60a5fa;
+  --accent-soft: rgba(59, 130, 246, 0.14);
+  --brand: #ef2b45;
+  /* Small red text needs a lighter tint to clear 4.5:1 on this
+     background -- same reason the subsystem and assembly badges are
+     light tints rather than saturated hues. */
+  --brand-dim: #ff8b96;
+  /* Foreground for text sitting ON an accent background. Dark rather
+     than white: white on #3b82f6 is 3.7:1, which fails AA, while this
+     is 5.1:1. Neutral-cool, not the warm near-black the orange theme
+     used -- that reads muddy over blue. */
+  --on-accent: #0b1220;
   --border: #2a2e37;
   --radius: 12px;
   --radius-sm: 8px;
@@ -53,7 +70,7 @@ a { color: inherit; text-decoration: none; }
 .brand {
   display: flex; align-items: center; gap: 8px;
   font-family: var(--font-head); font-size: 1.15rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .5px; color: var(--accent);
+  text-transform: uppercase; letter-spacing: .5px; color: var(--brand);
   white-space: nowrap;
 }
 .brand em { font-style: normal; color: var(--text); }
@@ -87,7 +104,7 @@ a { color: inherit; text-decoration: none; }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .btn-sm { padding: 4px 9px; font-size: .82rem; }
 .btn-ghost { background: transparent; }
-.btn-primary { background: var(--accent); border-color: var(--accent); color: #14100c; font-weight: 600; }
+.btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 .btn-primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
 .btn-danger { color: #ffb4b4; border-color: #57303a; }
 .btn-danger:hover { background: #37222a; }
@@ -100,7 +117,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--surface); border: 0; padding: 6px 11px; cursor: pointer;
   color: var(--text-dim); font-size: .85rem;
 }
-.segmented button.active { background: var(--accent); color: #14100c; font-weight: 600; }
+.segmented button.active { background: var(--accent); color: var(--on-accent); font-weight: 600; }
 
 /* ===== Filter bar ===== */
 .filterbar {
@@ -126,7 +143,7 @@ a { color: inherit; text-decoration: none; }
 .chip .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .chip .count { color: var(--text-muted); font-size: .72rem; }
 .chip:hover { border-color: #3a404b; }
-.chip[aria-pressed="true"] { color: #14100c; font-weight: 600; border-color: transparent; }
+.chip[aria-pressed="true"] { color: var(--on-accent); font-weight: 600; border-color: transparent; }
 .chip[aria-pressed="true"] .count { color: rgba(0,0,0,.55); }
 .filter-count { margin-left: auto; color: var(--text-muted); font-size: .82rem; white-space: nowrap; }
 
@@ -188,7 +205,7 @@ a { color: inherit; text-decoration: none; }
   text-transform: uppercase; padding: 1px 5px; border-radius: 4px;
   border: 1px solid var(--border); color: var(--text-muted); flex: none;
 }
-.node-type-badge[data-type="vehicle"]   { color: var(--accent-2); border-color: #4a3a1e; }
+.node-type-badge[data-type="vehicle"]   { color: var(--brand-dim); border-color: #5c1f28; }
 .node-type-badge[data-type="subsystem"] { color: #8b9dff; border-color: #2f3557; }
 .node-type-badge[data-type="assembly"]  { color: #7fd4c1; border-color: #24463f; }
 
@@ -241,7 +258,7 @@ a { color: inherit; text-decoration: none; }
 .tag-pill {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 3px 8px; border-radius: 999px; font-size: .78rem;
-  color: #14100c; font-weight: 600;
+  color: var(--on-accent); font-weight: 600;
 }
 .tag-pill.inherited { background: transparent !important; border: 1px dashed currentColor; font-weight: 500; }
 .tag-pill button { background: none; border: 0; cursor: pointer; color: inherit; opacity: .7; font-size: .9rem; line-height: 1; }
