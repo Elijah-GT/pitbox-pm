@@ -482,6 +482,29 @@ def test_csv_export_has_a_row_per_node(client, project):
     assert len(body_rows) == len(_tree(client, project["id"])["nodes"])
 
 
+# --- SPA routing -------------------------------------------------------------
+# The catch-all that serves index.html for client-side routes is declared last,
+# but a mistake there is silent and nasty: it can swallow the API, turning a
+# typo'd fetch into a 200 page instead of a 404. These pin the boundary.
+
+
+def test_unknown_api_path_is_a_json_404_not_the_html_shell(client):
+    r = client.get("/api/definitely-not-a-route")
+    assert r.status_code == 404
+    assert r.headers["content-type"].startswith("application/json")
+
+
+def test_api_routes_still_win_over_the_catch_all(client):
+    assert client.get("/api/projects").status_code == 200
+    assert client.get("/openapi.json").status_code == 200
+
+
+def test_client_side_routes_are_served_by_the_server(client):
+    # /login exists only in the React router. A hard refresh has to reach the
+    # shell, or every page but / breaks in production.
+    for path in ("/", "/app", "/login", "/signup"):
+        r = client.get(path)
+        assert r.status_code == 200, path
 # --- authentication ----------------------------------------------------------
 
 def test_every_api_route_requires_a_session(anon, project):

@@ -65,8 +65,9 @@ export function ancestorIds(node: TreeNode): number[] {
  * A row ready to draw, carrying the guide-line shape for the left gutter.
  *
  * `ancestorHasNext[d]` says whether the ancestor at depth d still has siblings
- * below it — that is what decides between a continuing '│' and blank space in
- * that column. `isLast` picks '└──' over '├──' for the node's own elbow.
+ * below it — that is what decides whether that column carries a riser or is
+ * left blank. `isLast` picks a rounded elbow over a tee for the node's own edge.
+ * TreeEdges in TreeView.tsx turns both into SVG.
  *
  * Both are computed over the RENDERED set, not the full tree: if a filter hides
  * the last three children of a branch, the last surviving child must get the
@@ -101,15 +102,4 @@ export function flattenVisible(
 
   walk(rootNodes(index), [])
   return out
-}
-
-/**
- * The literal glyph prefix for a row, e.g. '│   ├── '.
- * Four characters per level, monospaced, so every column lines up exactly the
- * way the DOS `tree` command does it.
- */
-export function guidePrefix(row: TreeRow): string {
-  const columns = row.ancestorHasNext.map((hasNext) => (hasNext ? '│   ' : '    ')).join('')
-  if (row.node.depth === 0) return columns // a root has nothing to hang from
-  return columns + (row.isLast ? '└── ' : '├── ')
 }

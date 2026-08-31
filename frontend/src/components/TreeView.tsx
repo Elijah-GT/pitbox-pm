@@ -10,7 +10,14 @@ import {
 } from '../lib/connections'
 import type { Visibility } from '../lib/filter'
 import { STATUS_COLORS, STATUS_LABELS } from '../lib/format'
-import { childrenOf, flattenVisible, guidePrefix, tagsOf, type TreeIndex } from '../lib/tree'
+import {
+  ancestorIds,
+  childrenOf,
+  flattenVisible,
+  tagsOf,
+  type TreeIndex,
+  type TreeRow,
+} from '../lib/tree'
 
 /**
  * Fixed row height. The connection gutter positions everything by row index
@@ -19,6 +26,17 @@ import { childrenOf, flattenVisible, guidePrefix, tagsOf, type TreeIndex } from 
  * declaring its own number.
  */
 export const ROW_H = 26
+
+/**
+ * Indent per level. The edge layer for a row is exactly `(depth + 1) * INDENT`
+ * wide, which is what makes a child's riser land under its parent's twisty:
+ * the parent's own edge layer is one INDENT narrower, so its controls start
+ * precisely where the child's elbow column begins.
+ */
+const INDENT = 18
+
+/** Corner radius on a last-child elbow. */
+const ELBOW_R = 6
 
 interface Props {
   index: TreeIndex
@@ -57,6 +75,13 @@ export function TreeView({
 
   const rowIndexById = new Map(rows.map((r, i) => [r.node.id, i]))
   const gw = gutterWidth(groups)
+
+  // The chain from the root down to the selected node, drawn brighter than the
+  // rest so a part six levels deep can be traced back to its subsystem.
+  const selectedNode = selectedId == null ? undefined : index.byId.get(selectedId)
+  const pathIds = new Set<number>(
+    selectedNode ? [...ancestorIds(selectedNode), selectedNode.id] : [],
+  )
 
   // Which lanes each node sits on, so the row can show its own little swatches.
   const lanesByNode = new Map<number, ConnectionGroup[]>()
@@ -147,11 +172,7 @@ export function TreeView({
                 if (draggedId && draggedId !== node.id) onMove(draggedId, node.id)
               }}
             >
-              {/* Hierarchy guides — the DOS `tree` look, monospaced so the
-                  columns line up exactly down the whole list. */}
-              <span className="guides" aria-hidden="true">
-                {guidePrefix(row)}
-              </span>
+              <TreeEdges row={row} onPath={pathIds.has(node.id)} />
 
               <button
                 type="button"
@@ -198,6 +219,15 @@ export function TreeView({
                 +
               </button>
 
+              {/* Bridges the row to the connection gutter. Also the flex
+                  spacer that pushes the tag dots right, so an unconnected row
+                  lays out exactly as before. */}
+              <span
+                className="row-leader"
+                style={lanes.length ? ({ '--leader': lanes[0].color } as CSSProperties) : undefined}
+                aria-hidden="true"
+              />
+
               <span className="row-tags">
                 {fileCount > 0 && <span className="file-pip">{`📎${fileCount}`}</span>}
                 {tags.slice(0, 6).map((tag) => (
@@ -223,6 +253,74 @@ export function TreeView({
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The drawn hierarchy, one SVG per row.
+ *
+ * Ancestor columns are plain risers; the row's own edge is a rounded elbow when
+ * it is the last child and a tee when it is not. Keeping the geometry row-local
+ * rather than one canvas behind everything means nothing has to know the total
+ * row count, so expanding a branch cannot knock the lines out of register.
+ *
+ * A root gets an empty layer rather than none at all — it still has to occupy
+ * its column so its children's risers line up under it.
+ */
+function TreeEdges({ row, onPath }: { row: TreeRow; onPath: boolean }) {
+  const depth = row.ancestorHasNext.length
+  const width = (depth + 1) * INDENT
+  const mid = ROW_H / 2
+  const ex = depth * INDENT + INDENT / 2
+  const stroke = onPath ? 'var(--tree-edge-strong)' : 'var(--tree-edge)'
+  const w = onPath ? 1.6 : 1
+
+  return (
+    <svg
+      className="tree-edges"
+      width={width}
+      height={ROW_H}
+      viewBox={`0 0 ${width} ${ROW_H}`}
+      aria-hidden="true"
+    >
+      {row.ancestorHasNext.map((hasNext, i) =>
+        hasNext ? (
+          <line
+            key={i}
+            x1={i * INDENT + INDENT / 2}
+            y1={0}
+            x2={i * INDENT + INDENT / 2}
+            y2={ROW_H}
+            stroke="var(--tree-edge)"
+            strokeWidth={1}
+          />
+        ) : null,
+      )}
+
+      {depth > 0 &&
+        (row.isLast ? (
+          <path
+            d={`M ${ex} 0 V ${mid - ELBOW_R} Q ${ex} ${mid} ${ex + ELBOW_R} ${mid} H ${width}`}
+            fill="none"
+            stroke={stroke}
+            strokeWidth={w}
+            strokeLinecap="round"
+          />
+        ) : (
+          <>
+            <line x1={ex} y1={0} x2={ex} y2={ROW_H} stroke={stroke} strokeWidth={w} />
+            <line
+              x1={ex}
+              y1={mid}
+              x2={width}
+              y2={mid}
+              stroke={stroke}
+              strokeWidth={w}
+              strokeLinecap="round"
+            />
+          </>
+        ))}
+    </svg>
   )
 }
 
@@ -268,7 +366,8 @@ function ConnectionGutter({
 
         return (
           <g key={group.key} stroke={group.color} fill={group.color}>
-            {/* leader from the row to its lane */}
+            {/* Picks up where the row's own dotted leader stops, with the
+                same dash, so the two read as one line into the lane. */}
             {ys.map((y) => (
               <line
                 key={`l${y}`}
@@ -277,15 +376,23 @@ function ConnectionGutter({
                 x2={x}
                 y2={y}
                 strokeWidth={1}
-                opacity={0.28}
+                strokeDasharray="3 4"
+                opacity={0.55}
               />
             ))}
             {/* the spine joining every member of this value */}
             {ys.length > 1 && (
-              <line x1={x} y1={ys[0]} x2={x} y2={ys[ys.length - 1]} strokeWidth={1.75} />
+              <line
+                x1={x}
+                y1={ys[0]}
+                x2={x}
+                y2={ys[ys.length - 1]}
+                strokeWidth={1.75}
+                strokeLinecap="round"
+              />
             )}
             {ys.map((y) => (
-              <circle key={`d${y}`} cx={x} cy={y} r={3} stroke="none" />
+              <circle key={`d${y}`} cx={x} cy={y} r={3.5} stroke="none" />
             ))}
           </g>
         )

@@ -1,5 +1,6 @@
 import type { AuthMode } from '../api/client'
 import type { Member, ProjectSummary } from '../api/types'
+import { Wordmark } from './Wordmark'
 
 interface Props {
   projects: ProjectSummary[]
@@ -17,21 +18,10 @@ export function TopBar({
 }: Props) {
   return (
     <header className="topbar">
+      {/* The same mark as the public pages — one component, so the app and
+          the landing page cannot drift apart. */}
       <div className="brand">
-        <svg viewBox="0 0 48 48" width="26" height="26" aria-hidden="true">
-          <path
-            d="M6 34 L18 12 L26 24 L34 14 L42 34 Z"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinejoin="round"
-          />
-          <circle cx="16" cy="38" r="4" fill="currentColor" />
-          <circle cx="34" cy="38" r="4" fill="currentColor" />
-        </svg>
-        <span>
-          Pit <em>Box</em>
-        </span>
+        <Wordmark />
       </div>
 
       <select

@@ -1,0 +1,1833 @@
+/* Pit Box — public site (landing, auth, 404).
+   styles.css owns the tracker and the shared primitives (.btn, .input, tokens).
+   This file only adds what the marketing pages need, so the two never fight
+   over the same selector. */
+
+.site {
+  --shell: min(1140px, 100% - 48px);
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* ===== Nav ===================================================== */
+.site-nav {
+  position: relative;
+  z-index: 30;
+  border-bottom: 1px solid transparent;
+  transition: background 0.2s, border-color 0.2s, backdrop-filter 0.2s;
+}
+.site-nav.sticky {
+  position: sticky;
+  top: 0;
+}
+.site-nav.scrolled {
+  background: rgba(14, 15, 18, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom-color: var(--border);
+}
+/* While the header is still filling in, it stays transparent so the hero
+   pattern runs up behind it. Scrolling the pinned hero sets .scrolled almost
+   immediately, which otherwise drops a solid dark band across the top of the
+   artwork with nothing in it but two buttons. The normal treatment resumes the
+   moment the nav is complete. */
+:root[data-hero='active'] .site-nav.scrolled {
+  background: transparent;
+  backdrop-filter: none;
+  border-bottom-color: transparent;
+}
+.site-nav-inner {
+  width: var(--shell);
+  margin: 0 auto;
+  height: var(--nav-h);
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.site-brand {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  text-decoration: none;
+  flex: none;
+  /* Clips .brand-inner while it sits below the header, so it rises INTO the
+     bar rather than sliding over the page. */
+  overflow: hidden;
+}
+.brand-inner {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+/* Landing-page intro. The header is empty for the whole pinned hero — not
+   just the brand and links, but Log in and Sign up too, because those live
+   under the car until the visitor scrolls past them. The bar takes over only
+   once the hero's own pair is gone. Gated on [data-hero], which only the
+   landing page sets, so every other page renders a complete header
+   immediately and this can never leave the nav empty.
+
+   Transitions rather than keyframes: the state can be scrubbed backwards by
+   scrolling up, and a keyframe would have to be restarted to do that. */
+:root[data-hero] .site-nav .brand-inner,
+:root[data-hero] .site-nav .nav-tracker,
+:root[data-hero] .site-nav .site-links a,
+:root[data-hero] .site-nav .nav-sep,
+:root[data-hero] .site-nav .nav-burger {
+  transition:
+    opacity 0.45s ease,
+    transform 0.6s cubic-bezier(0.2, 0.85, 0.25, 1);
+}
+:root[data-hero='active'] .site-nav .brand-inner {
+  opacity: 0;
+  /* Above the header, clipped by .site-brand's overflow, so it arrives through
+     the top edge rather than sliding over the page. */
+  transform: translateY(-125%);
+}
+:root[data-hero='active'] .site-nav .nav-tracker,
+:root[data-hero='active'] .site-nav .site-links a,
+:root[data-hero='active'] .site-nav .nav-sep,
+:root[data-hero='active'] .site-nav .nav-burger {
+  opacity: 0;
+  transform: translateY(-7px);
+  pointer-events: none;
+}
+/* The links settle just behind the brand rather than with it. */
+:root[data-hero='passed'] .site-nav .nav-tracker,
+:root[data-hero='passed'] .site-nav .site-links a,
+:root[data-hero='passed'] .site-nav .nav-sep {
+  transition-delay: 0.12s;
+}
+
+/* The handoff is one-way, like the car's exit that triggers it. Once the car
+   has gone the header stays complete no matter how far back up you scroll, and
+   the hero's own pair never returns — otherwise the same two buttons would be
+   offered twice again. These match the 'active' rules above on specificity, so
+   they have to come after them to win. */
+:root[data-car-gone] .site-nav .brand-inner,
+:root[data-car-gone] .site-nav .nav-tracker,
+:root[data-car-gone] .site-nav .site-links a,
+:root[data-car-gone] .site-nav .nav-sep,
+:root[data-car-gone] .site-nav .nav-burger {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+:root[data-car-gone] .site-nav.scrolled {
+  background: rgba(14, 15, 18, 0.82);
+  backdrop-filter: blur(10px);
+  border-bottom-color: var(--border);
+}
+:root[data-car-gone] .hero-cta {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* The header's actions while the hero owns the screen: under the car, fading
+   out on the same progress that brings the bar in, so the same two buttons are
+   never offered twice at once. The fade is on .hero-cta (scroll-driven) and
+   the entrance on its children, because an animation and a declared value
+   cannot share one property. */
+.hero-cta {
+  /* A grid item under .hero-mark rather than pinned to the floor of the stage,
+     so it sits directly beneath the wordmark. The mark's negative margin
+     cancels its own halo padding, which puts this right at the glyph feet —
+     the margin here is the only gap. */
+  position: relative;
+  z-index: 7;
+  margin-top: clamp(18px, 3vh, 40px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: clamp(0, calc((0.5 - var(--p)) / 0.14), 1);
+}
+.hero-cta .btn {
+  font-size: 0.92rem;
+  text-decoration: none;
+  padding: 9px 18px;
+  animation: cue-in 0.5s ease var(--cue-in) both;
+}
+/* Not merely invisible once the nav has taken over — unreachable, so it can
+   never swallow a click aimed at the page behind it. */
+:root[data-hero='passed'] .hero-cta {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.wordmark-text {
+  font-family: var(--font-head);
+  font-size: 1.15rem;
+  letter-spacing: 1.5px;
+  /* Plain white. --text is #f2f3f5, which reads faintly silver next to the
+     orange half of the mark. */
+  color: #fff;
+  font-weight: 300;
+}
+.wordmark-text b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* Beside the wordmark, before the auto margin that pushes the account actions
+   to the far right. White, not muted: with the other links gone it is the only
+   destination in the bar and should not read as secondary. */
+.nav-tracker {
+  margin-left: 26px;
+  color: #fff;
+  text-decoration: none;
+  font-size: 0.92rem;
+  transition: color 0.15s;
+}
+.nav-tracker:hover,
+.nav-tracker.active {
+  color: var(--accent);
+}
+
+.site-links {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+.site-links a:not(.btn) {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+  transition: color 0.15s;
+}
+.site-links a:not(.btn):hover,
+.site-links a.active {
+  color: var(--text);
+}
+.nav-sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+}
+.site-links .btn {
+  font-size: 0.92rem;
+  text-decoration: none;
+  padding: 8px 16px;
+}
+
+.nav-burger {
+  display: none;
+  margin-left: auto;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.nav-burger span {
+  width: 20px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+}
+
+/* ===== Buttons (public-site sizes) ============================= */
+.btn-lg {
+  padding: 12px 22px;
+  font-size: 1rem;
+  text-decoration: none;
+  border-radius: 10px;
+}
+.btn-block {
+  width: 100%;
+  justify-content: center;
+}
+
+/* ===== Hero ==================================================== */
+/* A pinned stage. `.hero` is tall, `.hero-stage` sticks for its whole length,
+   so scrolling the hero moves nothing on screen -- it only advances `--p`
+   (0..1, written by useHeroScroll), which everything below reads. The
+   background is therefore genuinely stationary, not parallaxed slowly. */
+.hero {
+  position: relative;
+  height: 200vh;
+  /* Pulled up under the header. Nav and stage are both sticky at top 0, so
+     once the hero is pinned the pattern already runs behind the bar — but at
+     rest the hero started below it, leaving a dead band across the top. The
+     stage adds the same amount back as padding, so the wordmark does not move;
+     this also removes the small upward shift it used to make over the first
+     68px of scroll. */
+  margin-top: calc(var(--nav-h) * -1);
+}
+.hero-stage {
+  --p: 0;
+  /* How far the card has risen, 0..1. Lives here rather than on .hero-card so
+     the wordmark can read it too. */
+  --cardp: clamp(0, calc((var(--p) - 0.28) / 0.5), 1);
+  /* Grid pitch, shared by both backdrop layers. */
+  --cell: 64px;
+  /* When the scroll cue appears: after INTRO_MS (2300ms) in HeroCar3D, so the
+     opening turn has landed. */
+  --cue-in: 2.5s;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  /* Mark sits high, not centred: the lower half of the stage is reserved for
+     the car so the two never fight for the same space. */
+  place-items: start center;
+  /* The column can never be wider than the stage. Without this, a wordmark
+     whose max-content exceeds the viewport (which it does until the webfont
+     loads) grows the implicit column and takes every other item with it. */
+  grid-template-columns: minmax(0, 100%);
+  padding-top: calc(clamp(72px, 15vh, 170px) + var(--nav-h));
+}
+/* Part of the same one-way handoff as the car. Once it has gone the card never
+   drops all the way back down: scrolling to the top leaves it parked partway
+   up, so the page you return to is the one after the reveal, not a rerun of
+   the intro. Nothing else belongs in this rule — it overrides one value. */
+:root[data-car-gone] .hero-stage {
+  --cardp: clamp(0.48, calc((var(--p) - 0.28) / 0.5), 1);
+}
+
+/* Backdrop: the live grid, a radial mask that keeps it strongest behind the
+   wordmark and fades it at the edges, then a hard fade into the page. */
+.hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.hero-life {
+  position: absolute;
+  inset: 0;
+}
+/* Two grids of the same pitch, the upper one offset by half a cell so its
+   lines fall between the lower one's. Sliding it sideways by exactly one cell
+   walks those lines through the static set and loops seamlessly — at the end
+   of the keyframe the pattern is identical to the start, so there is no jump
+   to hide. Background-position rather than transform: the gradient is infinite,
+   so nothing has to be oversized to avoid an edge appearing. */
+.hero-grids {
+  position: absolute;
+  inset: 0;
+}
+.hero-grids span {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+.grid-a {
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.15) 0 2px,
+      transparent 2px var(--cell)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.15) 0 2px,
+      transparent 2px var(--cell)
+    );
+}
+.hero-grids .grid-b {
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.1) 0 2px,
+      transparent 2px var(--cell)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.1) 0 2px,
+      transparent 2px var(--cell)
+    );
+  background-position: calc(var(--cell) / 2) calc(var(--cell) / 2);
+  /* Oversized by a cell on every side so translating never exposes an edge. */
+  inset: calc(var(--cell) * -1);
+  animation: grid-drift 9s linear infinite;
+  will-change: transform;
+}
+/* Diagonal: one whole cell on BOTH axes, so the layer lands exactly where it
+   started and the loop is invisible. Any other pairing would drift out of
+   register and need a fade to cover the reset.
+
+   Moved with transform rather than background-position. Background-position is
+   not a compositor property: animating it repaints this full-viewport layer on
+   every single frame. A transform is handed to the compositor and costs
+   essentially nothing. */
+@keyframes grid-drift {
+  to {
+    transform: translate3d(var(--cell), var(--cell), 0);
+  }
+}
+/* Reads inverted at first glance: the CENTRE is most transparent, so the grid
+   shows through behind the wordmark and is progressively covered by the page
+   colour toward the edges. That is what stops it looking like a tiled image. */
+.hero-mask {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: radial-gradient(
+    ellipse at 50% 46%,
+    color-mix(in srgb, var(--bg) 30%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 58%, transparent) 45%,
+    color-mix(in srgb, var(--bg) 94%, transparent) 100%
+  );
+}
+.hero-stars {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+/* The same field, over the section glow. Geometry matters here: the glow box
+   starts 150px above .gh-stage and runs 540px down, but the panel covers it
+   from 0, so the only part anyone SEES is the band above the panel edge — plus
+   the warm spill that reaches up behind the heading and the icon. So the field
+   is tall enough to reach the icon and masked strongest just above the panel,
+   where the bloom actually is, instead of centred on a box that is mostly
+   hidden. z-index 0 keeps it behind the panel (z 1) and the copy. */
+.glow-stars {
+  position: absolute;
+  left: 50%;
+  top: -540px;
+  width: min(1180px, 118%);
+  height: 720px;
+  transform: translateX(-50%);
+  z-index: 0;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    ellipse 48% 46% at 50% 74%,
+    #000 0%,
+    rgba(0, 0, 0, 0.88) 40%,
+    rgba(0, 0, 0, 0.48) 64%,
+    transparent 84%
+  );
+  mask-image: radial-gradient(
+    ellipse 48% 46% at 50% 74%,
+    #000 0%,
+    rgba(0, 0, 0, 0.88) 40%,
+    rgba(0, 0, 0, 0.48) 64%,
+    transparent 84%
+  );
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+.hero-stars span,
+.glow-stars span {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  animation-name: twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+.hero-bottom {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 200px;
+  z-index: 3;
+  background: linear-gradient(transparent, var(--bg));
+}
+
+/* Two elements on purpose. The outer one owns the SCROLL exit, the inner owns
+   the ENTRANCE animation -- a running animation wins the cascade over normal
+   declarations, so if one element did both, `animation-fill-mode: both` would
+   pin opacity at 1 and the scroll fade would silently do nothing. */
+.hero-mark {
+  position: relative;
+  z-index: 3;
+  /* Cancels the padding below, so the halo's breathing room costs no layout
+     space and the letters land exactly where they did before it was added. */
+  margin: -0.62em 0;
+  /* Font-size lives here rather than on the inner element for two reasons: the
+     wipe below is expressed in em, so it tracks the letters at every viewport
+     width instead of drifting as the clamp changes; and the vertical padding
+     gives the glow halo room to live INSIDE the masked box. A mask clips what
+     it does not cover, so without that room the halo is sliced off square and
+     the text sits in a visible bright rectangle. */
+  font-size: clamp(3.4rem, 19vw, 16rem);
+  text-align: center;
+  padding: 0.62em 24px;
+  /* Wiped out from the bottom rather than blurred: a mask edge travels up
+     through the glyphs, so the letters stay perfectly sharp and simply stop
+     existing from the baseline up. The text spans 0.4em to 1.32em of the box,
+     so the edge starts just under it (0.26em, nothing hidden at rest) and ends
+     just over the cap height (1.58em). */
+  --wipe: calc((var(--cardp) - 0.62) / 0.38 * 1.32em + 0.26em);
+  -webkit-mask-image: linear-gradient(
+    to top,
+    transparent var(--wipe),
+    #000 calc(var(--wipe) + 0.34em)
+  );
+  mask-image: linear-gradient(
+    to top,
+    transparent var(--wipe),
+    #000 calc(var(--wipe) + 0.34em)
+  );
+  /* Masks repeat by default, which tiles the gradient above and below the box
+     and bands the halo. */
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  will-change: mask-image;
+}
+
+/* White, with a short darker fall-off at the foot so the letters seat against
+   the grid instead of floating on it. The halo stays warm — it is spill from
+   the car below, not a colour the type is painted in. */
+.hero-mark-in {
+  display: block;
+  font-family: var(--font-head);
+  text-transform: uppercase;
+  line-height: 0.92;
+  letter-spacing: clamp(2px, 1.2vw, 14px);
+  white-space: nowrap;
+  /* Bright through the top half, then falling a long way into near-black at
+     the feet — the drop is taller and goes much darker than a seating shadow
+     would, so the letters read as lit from above and dissolving downward. */
+  background-image: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #ffffff 36%,
+    #eef0f3 52%,
+    #b9bfc9 68%,
+    #737a86 82%,
+    #3a3f48 92%,
+    #1b1e24 100%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: mark-emerge 2.1s cubic-bezier(0.16, 0.84, 0.3, 1) both;
+}
+/* The nav shows PIT light and white, BOX bold and orange. The hero is now the
+   same mark at size: same two weights, same two colours, each half carrying its
+   own gradient so both still fall away into the dark at the feet. Clipping on
+   the spans overrides the parent's, which keeps painting the space between. */
+.hm-thin,
+.hm-bold {
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.hm-thin {
+  font-weight: 300;
+  background-image: linear-gradient(
+    180deg,
+    #ffffff 0%,
+    #ffffff 36%,
+    #eef0f3 52%,
+    #b9bfc9 68%,
+    #737a86 82%,
+    #3a3f48 92%,
+    #1b1e24 100%
+  );
+}
+.hm-bold {
+  font-weight: 600;
+  background-image: linear-gradient(
+    180deg,
+    #ffb163 0%,
+    #ff8c2e 34%,
+    #ff6a1a 54%,
+    #c9520d 74%,
+    #6d2f07 90%,
+    #2a1305 100%
+  );
+}
+/* The letters are never blurred — they are sharp from the first frame and the
+   entrance is an ignition instead: the glyphs come up dim and desaturated, then
+   brighten as the halo blooms out of nothing, the way a stick lights when it is
+   snapped. Both ends of the filter list the same functions in the same order,
+   which is what lets the browser interpolate it rather than snapping. */
+@keyframes mark-emerge {
+  0% {
+    opacity: 0;
+    letter-spacing: clamp(14px, 4.5vw, 64px);
+    filter: brightness(0.2) saturate(0.5) drop-shadow(0 0 0 rgba(255, 138, 43, 0));
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    letter-spacing: clamp(2px, 1.2vw, 14px);
+    filter: brightness(1) saturate(1) drop-shadow(0 0 34px rgba(255, 138, 43, 0.34));
+  }
+}
+
+/* The car owns the lower half of the stage -- the space the wordmark was moved
+   up to make. Above the bottom fade so its silhouette is never washed out. */
+.hero-car canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* No filter here. A drop-shadow on this element blurs the whole canvas
+     again on every rendered frame — a full-screen blur at 60fps, and the
+     single most expensive thing that was on this page. The glow below is
+     painted once instead. */
+}
+.hero-car {
+  position: absolute;
+  left: 0;
+  right: 0;
+
+  /* Lifted off the floor of the stage so the roll cage runs up behind the
+     lettering — the car and the wordmark share vertical space rather than
+     stacking. */
+  bottom: 3%;
+  height: min(80%, 780px);
+  /* Above the rising card (5). The card now finishes climbing before the car
+     has left, so if the car sat behind it the spin and the drive-off would
+     both happen out of sight. */
+  z-index: 6;
+  pointer-events: none;
+  animation: car-in 1.1s 0.5s ease both;
+}
+/* A soft pool of light so the car reads as standing on something. It goes out
+   as the card climbs into it: a shadow spilling onto a solid panel sliding over
+   the top reads as a mistake. Only opacity changes, so this stays a
+   compositor-only animation. */
+.hero-car::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 22%;
+  width: min(700px, 72%);
+  height: 120px;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 138, 61, 0.18),
+    transparent 70%
+  );
+  opacity: clamp(0, calc((0.66 - var(--cardp)) / 0.2), 1);
+  pointer-events: none;
+}
+/* Once the car has gone the pool never comes back, however far you scroll up —
+   a shadow with nothing casting it. */
+:root[data-car-gone] .hero-car::before {
+  opacity: 0;
+}
+/* Shown only if the browser cannot give us a WebGL context at all. Keeps the
+   ground pool so the hero still has a focal point instead of a void. */
+.hero-car-fallback {
+  width: 100%;
+  height: 100%;
+}
+@keyframes car-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Rises from under the fold while the car is still leaving — GitHub slides its
+   product panel up over the hero text the same way. Driven off the same --p,
+   remapped so it starts at 0.72, mid-exit. */
+.hero-card {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: min(1180px, 92%);
+  z-index: 5;
+  transform: translateX(-50%) translateY(calc((1 - var(--cardp)) * 100%));
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: linear-gradient(180deg, rgba(28, 31, 38, 0.94), rgba(14, 15, 18, 0.99));
+  padding: clamp(14px, 2vw, 24px) clamp(14px, 2vw, 24px) 0;
+  box-shadow:
+    0 -34px 90px -24px rgba(255, 122, 40, 0.34),
+    0 -1px 0 rgba(255, 255, 255, 0.07) inset;
+  will-change: transform;
+}
+.hero-card .shot,
+.hero-card .shot-empty {
+  border-radius: 14px 14px 0 0;
+  border-right-width: 1px;
+  aspect-ratio: 16 / 9;
+}
+
+/* Fades out roughly three times faster than the wordmark, so the invitation is
+   gone the moment it has been taken. */
+.hero-cue {
+  position: absolute;
+  /* Clear of .hero-bottom's 200px fade, which was washing it out, and above it
+     in the stack rather than level with it. */
+  bottom: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  opacity: calc((1 - var(--p) * 3) * 0.8);
+  font-size: 0.7rem;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+/* Held back until the car has finished its opening turn — the cue is an
+   invitation to scroll, and offering it while the reveal is still running asks
+   the visitor to leave before they have seen anything. It fades in on the
+   children rather than .hero-cue itself, whose opacity is already driven by
+   scroll; a second animation on the same property would override that. */
+.hero-cue span {
+  animation: cue-in 0.5s ease var(--cue-in) both;
+}
+.hero-cue svg {
+  width: 16px;
+  height: 16px;
+  animation:
+    cue-in 0.5s ease var(--cue-in) both,
+    cue-bob 2s ease-in-out var(--cue-in) infinite;
+}
+@keyframes cue-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes cue-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(5px); }
+}
+
+.scene-wrap {
+  margin: 28px 0 6px;
+}
+.scene {
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  display: block;
+  background: color-mix(in srgb, var(--bg-soft) 84%, transparent);
+}
+
+/* ===== Hero scene animation ==================================== */
+.scene-sun-core { fill: #ff8a3d; opacity: 0.5; }
+
+.scene-ground path { fill: #23272f; stroke: #333947; stroke-width: 1.5; }
+.scene-ridge path { fill: #171a21; stroke: none; }
+
+.scene-car-body .tub { fill: #2b303a; stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+.scene-car-body .cage { fill: none; stroke: var(--accent); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; }
+.scene-car-body .arm { stroke: #6d7686; stroke-width: 4; stroke-linecap: round; }
+.scene-car-body .helmet { fill: #f2f3f5; }
+.scene-car-body .visor { stroke: #2b303a; stroke-width: 3; stroke-linecap: round; }
+
+.scene-wheel .tyre { fill: #14161b; stroke: #464d5c; stroke-width: 2; }
+.scene-wheel .tread { fill: none; stroke: #565f70; stroke-width: 7; }
+.scene-wheel .rim { fill: #333947; stroke: var(--accent-2); stroke-width: 2; }
+.scene-wheel .spokes { stroke: var(--accent-2); stroke-width: 2; }
+
+.scene-dust circle { fill: #4a5262; opacity: 0.5; }
+
+@keyframes scene-roll { to { transform: translateX(-480px); } }
+@keyframes scene-bob {
+  0%, 100% { transform: translate(240px, 150px) rotate(-0.8deg); }
+  30%      { transform: translate(240px, 145px) rotate(0.6deg); }
+  60%      { transform: translate(240px, 152px) rotate(-0.4deg); }
+}
+@keyframes scene-spin { to { transform: rotate(360deg); } }
+@keyframes scene-puff {
+  0%   { transform: translate(0, 0) scale(0.4); opacity: 0; }
+  25%  { opacity: 0.55; }
+  100% { transform: translate(-46px, -20px) scale(1.5); opacity: 0; }
+}
+
+.scene-ground { animation: scene-roll 2.4s linear infinite; }
+.scene-ridge { animation: scene-roll 14s linear infinite; }
+.scene-car-body { animation: scene-bob 1.15s ease-in-out infinite; }
+.scene-wheel { animation: scene-spin 0.85s linear infinite; }
+.scene-dust circle { animation: scene-puff 1.6s ease-out infinite; }
+.scene-dust circle:nth-child(2) { animation-delay: 0.35s; }
+.scene-dust circle:nth-child(3) { animation-delay: 0.7s; }
+.scene-dust circle:nth-child(4) { animation-delay: 1.05s; }
+
+/* ===== Sections ================================================ */
+.section {
+  width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(48px, 8vw, 96px) 0;
+  border-top: 1px solid var(--border);
+}
+.section.narrow { max-width: 720px; }
+.section.center { text-align: center; }
+.center-cta { justify-content: center; }
+
+.eyebrow {
+  font-family: var(--font-head);
+  text-transform: uppercase;
+  letter-spacing: 2.4px;
+  font-size: 0.76rem;
+  color: var(--accent);
+  margin-bottom: 10px;
+}
+.section-title {
+  font-family: var(--font-head);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: clamp(1.7rem, 3.6vw, 2.6rem);
+  line-height: 1.1;
+  color: var(--text);
+  margin-bottom: 22px;
+  letter-spacing: -0.2px;
+}
+.prose { max-width: 68ch; }
+.prose p + p { margin-top: 14px; }
+.prose strong { color: var(--text); font-weight: 600; }
+.muted { color: var(--text-muted); }
+
+.chain {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.chain em {
+  font-style: normal;
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--accent-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+
+/* ===== Spec strip ============================================== */
+.specs {
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.spec {
+  background: var(--bg-soft);
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.spec-k {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+}
+.spec-v {
+  font-family: var(--font-head);
+  font-size: 1.7rem;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+/* ===== Pull quote ============================================== */
+.pull { max-width: 74ch; }
+.pull blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 4px 0 4px 20px;
+  margin-bottom: 20px;
+  font-family: var(--font-head);
+  font-size: clamp(1.15rem, 2.2vw, 1.5rem);
+  line-height: 1.35;
+  color: var(--text);
+}
+.pull p + p { margin-top: 12px; }
+.pull strong { color: var(--text); font-weight: 600; }
+
+/* ===== Events ================================================== */
+.event-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 28px;
+}
+.event-h {
+  font-family: var(--font-head);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 0.95rem;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.pill {
+  font-size: 0.68rem;
+  letter-spacing: 1.2px;
+  padding: 3px 9px;
+  border-radius: 99px;
+  border: 1px solid;
+}
+.pill-static { color: #8b9dff; border-color: #2f3557; background: #191d2e; }
+.pill-dynamic { color: var(--accent-2); border-color: #4a3a1e; background: #251b0f; }
+
+.event-list { list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.event-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 13px 0;
+  border-top: 1px solid var(--border);
+}
+.event-list b { color: var(--text); font-weight: 600; font-size: 0.97rem; }
+.event-list span { font-size: 0.93rem; color: var(--text-muted); }
+
+/* ===== Endurance ============================================== */
+.endurance {
+  margin-top: 40px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 26px;
+}
+.endurance-bar {
+  height: 100%;
+  min-height: 108px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+  position: relative;
+}
+.endurance-fill {
+  position: absolute;
+  inset: auto 0 0 0;
+  background: linear-gradient(var(--accent-2), var(--accent));
+  border-radius: 99px;
+  height: 0;
+}
+.reveal.is-in .endurance-fill,
+.section.is-in .endurance-fill {
+  animation: endurance-rise 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+@keyframes endurance-rise { to { height: 100%; } }
+.endurance h3 {
+  font-family: var(--font-head);
+  font-size: 1.35rem;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 8px;
+}
+
+/* ===== Feature cards ========================================== */
+.tool-grid {
+  text-align: left;
+  margin-top: 34px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 16px;
+}
+.feature {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 22px;
+  transition: border-color 0.18s, transform 0.18s;
+}
+.feature:hover { border-color: #3b4250; transform: translateY(-3px); }
+.feature h3 {
+  font-family: var(--font-head);
+  font-size: 1.06rem;
+  color: var(--text);
+  margin-bottom: 8px;
+  letter-spacing: 0.3px;
+}
+.feature p { font-size: 0.93rem; color: var(--text-muted); }
+
+/* ===== CTA strip ============================================== */
+.cta-strip {
+  text-align: left;
+  margin-top: 44px;
+  padding: 30px;
+  border-radius: var(--radius);
+  border: 1px solid #4a3a1e;
+  background: linear-gradient(120deg, #221709, var(--bg-soft) 65%);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  align-items: center;
+  justify-content: space-between;
+}
+.cta-strip h3 {
+  font-family: var(--font-head);
+  font-size: 1.4rem;
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+.cta-strip-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* ===== Footer ================================================= */
+/* The under-page footer: fixed behind the page, uncovered by the last stretch
+   of scrolling rather than scrolled into. .foot-spacer is what creates that
+   stretch, and main's opaque background is what hides the footer until then —
+   without it the footer would show through the whole page. */
+.footer-reveal {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 0;
+  opacity: var(--footp, 1);
+  /* Out of focus while it is still buried, resolving as it is uncovered. The
+     radius is deliberately small: this is a filter on a full-width layer, so
+     it repaints while the value changes. It only changes over the last screen
+     of scrolling, which bounds the cost. */
+  filter: blur(calc((1 - var(--footp, 1)) * 10px));
+}
+.foot-spacer {
+  height: var(--foot-h, 0px);
+}
+.site > main {
+  position: relative;
+  z-index: 1;
+  background: var(--bg);
+}
+
+.site-footer {
+  margin-top: auto;
+  /* The full-bleed accent line across the top, drawn as a background hairline
+     so it can carry a gradient, over a tint that bleeds down out of it and
+     dies about a third of the way in. Border-top is gone: a border cannot hold
+     a gradient without border-image, and this composites in one paint. */
+  border-top: 0;
+  background-image:
+    linear-gradient(
+      90deg,
+      var(--accent) 0%,
+      var(--accent) 42%,
+      rgba(255, 106, 26, 0.55) 66%,
+      rgba(255, 106, 26, 0.22) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 106, 26, 0.11) 0%,
+      rgba(255, 106, 26, 0.04) 34%,
+      transparent 62%
+    );
+  background-size: 100% 2px, 100% 380px;
+  background-repeat: no-repeat, no-repeat;
+  background-position: 0 0, 0 0;
+  background-color: var(--bg-soft);
+  /* No top padding: .foot-news already carries it, and the two stacked left a
+     dead band above the wordmark. */
+  padding: 0 0 18px;
+}
+.site-footer-inner {
+  width: var(--shell);
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 26px;
+  justify-content: space-between;
+}
+.foot-brand {
+  font-family: var(--font-head);
+  letter-spacing: 1.5px;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+.foot-brand b { color: var(--accent); }
+.foot-links { display: flex; flex-wrap: wrap; gap: 20px; align-items: center; }
+.foot-links a {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+.foot-links a:hover { color: var(--text); }
+.foot-note {
+  width: var(--shell);
+  margin: 0 auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* ===== Auth =================================================== */
+.auth {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.auth-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 30px clamp(24px, 5vw, 64px);
+}
+.auth-brand { margin-bottom: auto; }
+.auth-body { margin: auto 0; width: 100%; max-width: 400px; padding: 40px 0; }
+.auth-title {
+  font-family: var(--font-head);
+  font-size: 2.1rem;
+  text-transform: uppercase;
+  color: var(--text);
+  letter-spacing: -0.2px;
+}
+.auth-sub { color: var(--text-muted); margin-bottom: 26px; }
+.auth-form { display: flex; flex-direction: column; gap: 16px; }
+.auth-form .field > span {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+}
+.auth-form .input { padding: 11px 12px; font-size: 0.98rem; }
+.auth-foot { margin-top: 22px; font-size: 0.92rem; color: var(--text-muted); }
+.auth-foot a, .notice a { color: var(--accent); }
+
+.notice {
+  border: 1px solid #4a3a1e;
+  background: #221709;
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
+  font-size: 0.9rem;
+  color: var(--text-dim);
+}
+.notice b { color: var(--accent-2); display: block; margin-bottom: 3px; }
+
+.auth-aside {
+  border-left: 1px solid var(--border);
+  background:
+    radial-gradient(closest-side at 70% 30%, rgba(255, 106, 26, 0.14), transparent),
+    var(--bg-soft);
+  display: grid;
+  place-items: center;
+  padding: 40px;
+}
+.auth-aside-inner { max-width: 360px; }
+.auth-quote {
+  font-family: var(--font-head);
+  font-size: 1.6rem;
+  line-height: 1.28;
+  color: var(--text);
+  margin-bottom: 30px;
+}
+.auth-tree { display: flex; flex-direction: column; gap: 2px; font-family: var(--font-mono); font-size: 0.86rem; }
+.auth-tree-row { display: flex; align-items: center; gap: 8px; color: var(--text-muted); }
+.auth-tree-edge { width: 16px; height: 1px; background: #39404e; }
+.auth-tree-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+
+/* ===== Reveal ================================================= */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+.reveal.is-in { opacity: 1; transform: none; }
+
+/* The hero attaches ONE observer, on .hero-grid, so both columns enter
+   together instead of racing separate observers. That wrapper is not itself
+   .reveal, so its children need this descendant rule -- without it they sit at
+   opacity 0 forever and the hero renders as an empty full-height gap. */
+.hero-grid.is-in .reveal { opacity: 1; transform: none; }
+.hero-grid .hero-art { transition-delay: 90ms; }
+
+/* ===== Responsive ============================================= */
+@media (max-width: 900px) {
+  .auth { grid-template-columns: minmax(0, 1fr); }
+  .auth-aside { display: none; }
+}
+
+@media (max-width: 760px) {
+  .site { --shell: min(1140px, 100% - 32px); }
+  .nav-burger { display: flex; }
+  /* The links live in the burger panel here, not the bar, so gating them on
+     scroll would mean opening the menu over the hero shows an empty panel.
+     Only the brand keeps its entrance. */
+  :root[data-hero='active'] .site-nav .site-links a:not(.btn),
+  :root[data-hero='active'] .site-nav .nav-sep {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
+  }
+  .site-links {
+    position: absolute;
+    top: 68px;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    padding: 14px 16px 20px;
+    background: var(--bg-soft);
+    border-bottom: 1px solid var(--border);
+    display: none;
+  }
+  .site-links.open { display: flex; }
+  .site-links a:not(.btn) { padding: 10px 4px; }
+  .nav-sep { display: none; }
+  .site-links .btn { text-align: center; }
+  .endurance { grid-template-columns: minmax(0, 1fr); }
+  .endurance-bar { min-height: 8px; height: 8px; }
+  .endurance-fill { inset: 0 auto 0 0; height: 100%; width: 0; }
+  .reveal.is-in .endurance-fill { animation: endurance-run 1.6s cubic-bezier(0.2, 0.7, 0.3, 1) forwards; }
+  @keyframes endurance-run { to { width: 100%; } }
+}
+
+/* Every animation on this page is decoration. None of it carries meaning that
+   is lost when it stops, so under reduced motion it all simply stops. */
+@media (prefers-reduced-motion: reduce) {
+  .scene-ground,
+  .scene-ridge,
+  .scene-car-body,
+  .scene-wheel,
+  .scene-dust circle {
+    animation: none;
+  }
+  .scene-dust circle { opacity: 0.35; }
+  .scene-car-body { transform: translate(240px, 150px); }
+  .reveal { opacity: 1; transform: none; transition: none; }
+  /* No animation, but still lit — without the end-state filter the halo would
+     simply be absent for anyone who prefers reduced motion. */
+  .hero-mark-in {
+    animation: none;
+    opacity: 1;
+    filter: drop-shadow(0 0 34px rgba(255, 138, 43, 0.34));
+  }
+  .hero-grids .grid-b { animation: none; }
+  /* useHeroScroll parks data-hero at 'passed' under reduced motion, so the
+     header is complete from the start; kill the movement too. */
+  :root[data-hero] .site-nav .brand-inner,
+  :root[data-hero] .site-nav .site-links a:not(.btn),
+  :root[data-hero] .site-nav .nav-sep { transition: none; }
+  .hero-cue span,
+  .hero-cue svg { animation: none; }
+  .hero-car { animation: none; }
+  .hero-stars span { animation: none; opacity: 0.7; }
+  .brand-inner { transition: none; }
+  .endurance-fill { height: 100%; animation: none !important; }
+  .feature:hover { transform: none; }
+}
+
+/* ===== GitHub-style centred sections ============================
+   Their unit, measured off the real page: a large GRADIENT glyph (not an
+   outline), a light-weight geometric sans headline at ~44px, a muted sub,
+   then a big glow rising from behind a panel whose visual bleeds off one
+   edge. The gradient and the bleed are what stop it looking like a card. */
+.gh-section {
+  position: relative;
+  width: var(--shell);
+  margin: 0 auto;
+  padding: clamp(80px, 13vh, 160px) 0 0;
+  text-align: center;
+}
+.gh-section.tail { padding-bottom: clamp(80px, 13vh, 160px); }
+
+.gh-mark {
+  --mark-a: #ff8a3d;
+  --mark-b: #ff5a1a;
+  position: relative;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 20px;
+  background: linear-gradient(155deg, var(--mark-a), var(--mark-b));
+  box-shadow:
+    0 10px 30px -8px color-mix(in srgb, var(--mark-b) 65%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  color: #fff;
+}
+.gh-mark svg { width: 32px; height: 32px; }
+.gh-mark.cool { --mark-a: #7aa2ff; --mark-b: #4361ee; }
+.gh-mark.warm { --mark-a: #ffc861; --mark-b: #f59e0b; }
+
+/* GitHub's headline is a light geometric sans, not a condensed display face.
+   Oswald stays the brand voice in the wordmark and nav; section headings use
+   the body family so the page reads calm rather than shouted. */
+.gh-h {
+  font-family: var(--font-body);
+  font-weight: 400;
+  font-size: clamp(1.9rem, 3.9vw, 2.9rem);
+  line-height: 1.14;
+  letter-spacing: -1px;
+  color: var(--text);
+  margin: 0 auto 16px;
+  max-width: 20ch;
+}
+.gh-sub {
+  max-width: 54ch;
+  margin: 0 auto;
+  font-size: clamp(1rem, 1.45vw, 1.16rem);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+/* The glow. Big, and it sits BEHIND the panel top edge so colour spills up
+   into the copy above — the single most recognisable part of the look. */
+.gh-stage {
+  position: relative;
+  margin-top: clamp(40px, 7vh, 76px);
+}
+.gh-stage::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  /* Anchored to the panel's top edge and rising from it: the box ends just
+     past that edge, and both ellipses are centred on it. A glow centred in the
+     middle of the box put its brightest part behind the panel, where none of
+     it could be seen. */
+  top: -430px;
+  width: min(1180px, 118%);
+  height: 470px;
+  transform: translateX(-50%);
+  background:
+    /* Hot core, narrow and tall, sitting right on the edge. */
+    radial-gradient(
+      ellipse 26% 58% at 50% 100%,
+      rgba(255, 178, 112, 0.6),
+      rgba(255, 126, 46, 0.26) 46%,
+      transparent 74%
+    ),
+    /* The wide, dim spread that takes it out to the page. */
+    radial-gradient(
+      ellipse 64% 88% at 50% 104%,
+      rgba(255, 106, 26, 0.24),
+      rgba(255, 96, 28, 0.08) 52%,
+      transparent 76%
+    );
+  filter: blur(14px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bezel {
+  position: relative;
+  z-index: 1;
+  /* Square at the foot, with no bottom edge: the card is the last thing on the
+     page, so it runs off into the footer instead of closing with two corners
+     hanging in space. */
+  border-radius: 22px 22px 0 0;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  /* The side borders fade out before the foot, so the card dissolves into the
+     page instead of ending on two hard vertical strokes. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 72px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 72px), transparent 100%);
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  background: linear-gradient(180deg, rgba(28, 31, 38, 0.82), rgba(14, 15, 18, 0.96));
+  overflow: hidden;
+  text-align: left;
+}
+.bezel::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 340px;
+  z-index: 0;
+  background: radial-gradient(
+    ellipse 62% 100% at 50% -12%,
+    rgba(255, 130, 52, 0.26),
+    transparent 70%
+  );
+  pointer-events: none;
+}
+.bezel > * { position: relative; z-index: 1; }
+.bezel-pad { padding: clamp(22px, 3.4vw, 40px); }
+/* The section's heading now lives inside the card, so it is centred and ruled
+   off from the specs below it rather than sitting on the page above. */
+.bezel-head {
+  text-align: center;
+}
+.bezel-head .gh-h {
+  margin-bottom: 14px;
+}
+/* The access row, sitting above the card rather than inside it. */
+.section-cta {
+  margin: clamp(26px, 4vh, 46px) 0 0;
+}
+.section-cta .emailcap-row {
+  justify-content: center;
+  margin: 0;
+}
+
+/* Split: copy left, visual bleeding off the right edge. */
+.bezel-split {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  align-items: center;
+  gap: clamp(20px, 3vw, 44px);
+  padding: clamp(26px, 3.6vw, 52px);
+  padding-right: 0;
+}
+.bezel-copy { min-width: 0; }
+.bezel-visual {
+  position: relative;
+  min-width: 0;
+  /* the bleed */
+  margin-right: -6%;
+}
+.bezel-visual img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Two-tone lead: bright claim, muted continuation, one paragraph. */
+.lead {
+  font-size: clamp(1.05rem, 1.7vw, 1.35rem);
+  line-height: 1.45;
+  color: var(--text-muted);
+  margin: 0 0 18px;
+  letter-spacing: -0.2px;
+}
+.lead b {
+  color: var(--text);
+  font-weight: 600;
+}
+.chev {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 1rem;
+  font-weight: 500;
+}
+.chev:hover { text-decoration: underline; }
+.chev svg { width: 14px; height: 14px; }
+
+/* Inline email capture — GitHub's primary hero action is a field, not a button. */
+.emailcap-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 30px;
+}
+.emailcap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: min(460px, 100%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 5px 5px 5px 6px;
+  transition: border-color 0.15s;
+}
+.emailcap:focus-within { border-color: var(--accent); }
+.emailcap input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  padding: 10px;
+}
+.emailcap input:focus { outline: none; }
+.emailcap input::placeholder { color: var(--text-muted); }
+.emailcap .btn { flex: none; }
+
+/* ===== Visual slots ============================================
+   The bleed lives here rather than on the image, so a placeholder and a real
+   screenshot occupy exactly the same box and swapping one for the other moves
+   nothing else on the page. */
+.shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 14px 0 0 14px;
+}
+.shot-empty {
+  aspect-ratio: 16 / 10;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 42%, transparent);
+  border-right: 0;
+  background:
+    repeating-linear-gradient(
+      135deg,
+      transparent 0 10px,
+      rgba(255, 255, 255, 0.02) 10px 20px
+    ),
+    rgba(14, 15, 18, 0.6);
+  color: var(--text-muted);
+}
+.shot-empty svg {
+  width: 30px;
+  height: 30px;
+  opacity: 0.65;
+}
+.shot-label {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+.shot-hint {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  max-width: 34ch;
+}
+
+@media (max-width: 860px) {
+  .bezel-split {
+    grid-template-columns: minmax(0, 1fr);
+    padding: clamp(22px, 5vw, 32px);
+  }
+  .bezel-visual { margin-right: -6%; margin-top: 4px; }
+  .gh-h { max-width: none; }
+}
+
+/* ===== Native scroll-driven reveals =============================
+   What GitHub actually uses: 33 animation-timeline declarations and no
+   animation library at all. The timeline runs on the compositor, so the
+   reveal keeps running smoothly while the main thread is busy. Gated by
+   @supports — Firefox has not shipped it, and falls back to the
+   IntersectionObserver path in useReveal.ts. */
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+@supports (animation-timeline: view()) {
+  /* Ranges end within `entry`, not in `cover`. A cover-relative end needs the
+     element to travel most of the way across the viewport, which the last
+     elements on a page never do — the document runs out first and they stall
+     part-faded. Ending inside `entry` means the reveal is complete once the
+     element is fully on screen, wherever it sits. */
+  .reveal {
+    transition: none;
+    animation: reveal-in linear both;
+    animation-timeline: view();
+    animation-range: entry 10% entry 70%;
+  }
+  /* The stagger. transition-delay does nothing on this path — the animation is
+     driven by scroll position, not time — so each step starts and finishes a
+     little further into the element's entrance instead. */
+  .reveal.r1 { animation-range: entry 4% entry 54%; }
+  .reveal.r2 { animation-range: entry 12% entry 64%; }
+  .reveal.r3 { animation-range: entry 22% entry 76%; }
+  .reveal.r4 { animation-range: entry 30% entry 88%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @supports (animation-timeline: view()) {
+    .reveal { animation: none; opacity: 1; transform: none; }
+  }
+}
+
+@media (max-width: 720px) {
+  .emailcap { width: 100%; }
+  .gh-section { padding: clamp(56px, 9vh, 96px) 0; }
+}
+
+/* ===== GitHub archetypes, part 2 ================================
+   Matched to their component inventory: SectionIntro x4, SectionBlock x11,
+   AccordionItem x8, CustomerStories x3, two segmented tablists, a logo
+   marquee, one blockquote, stat blocks, a second email capture, and a
+   four-column footer. Structure is theirs; every word and asset here is ours. */
+
+/* --- Segmented tabs (their pill tablist) --- */
+.seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(20, 22, 28, 0.6);
+}
+.seg button {
+  appearance: none;
+  border: 1px solid transparent;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 1rem;
+  padding: 10px 26px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.16s, border-color 0.16s, background 0.16s;
+}
+.seg button:hover { color: var(--text); }
+.seg button[aria-selected='true'] {
+  color: var(--text);
+  border-color: #59616f;
+  background: rgba(255, 255, 255, 0.04);
+}
+.seg-panel {
+  max-width: 60ch;
+  margin: 26px auto 0;
+  color: var(--text-muted);
+  font-size: clamp(1rem, 1.4vw, 1.1rem);
+  min-height: 3.2em;
+}
+
+/* --- Logo marquee --- */
+.marquee {
+  position: relative;
+  overflow: hidden;
+  padding: 30px 0;
+  border-block: 1px solid var(--border);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+.marquee-track {
+  display: flex;
+  gap: 64px;
+  width: max-content;
+  animation: marquee 34s linear infinite;
+}
+.marquee[data-paused='true'] .marquee-track { animation-play-state: paused; }
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.marquee-item {
+  display: grid;
+  place-items: center;
+  width: 190px;
+  height: 56px;
+  border: 1px dashed color-mix(in srgb, var(--text-muted) 38%, transparent);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  flex: none;
+}
+.marquee-pause {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-dim);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+
+/* --- Accordion --- */
+.acc { border-top: 1px solid var(--border); }
+.acc details { border-bottom: 1px solid var(--border); }
+.acc summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 4px;
+  font-size: clamp(1.05rem, 1.7vw, 1.32rem);
+  color: var(--text-dim);
+  transition: color 0.15s;
+}
+.acc summary::-webkit-details-marker { display: none; }
+.acc summary:hover { color: var(--text); }
+.acc details[open] summary { color: var(--text); }
+.acc-plus {
+  margin-left: auto;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  position: relative;
+  color: var(--accent);
+}
+.acc-plus::before,
+.acc-plus::after {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto 0;
+  height: 1.6px;
+  background: currentColor;
+  transition: transform 0.22s ease;
+}
+.acc-plus::after { transform: rotate(90deg); }
+.acc details[open] .acc-plus::after { transform: rotate(0deg); }
+.acc-body {
+  padding: 0 4px 24px;
+  color: var(--text-muted);
+  max-width: 62ch;
+  font-size: 0.98rem;
+}
+
+/* --- Stat blocks --- */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  border-top: 1px solid var(--border);
+}
+.stat-cell {
+  padding: clamp(38px, 6vw, 74px) clamp(20px, 3vw, 44px);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: left;
+}
+.stat-cell:last-child { border-right: 0; }
+.stat-n {
+  font-family: var(--font-body);
+  font-weight: 500;
+  font-size: clamp(2.2rem, 5vw, 3.6rem);
+  letter-spacing: -1.5px;
+  color: var(--text);
+  line-height: 1.05;
+}
+.stat-l { margin-top: 8px; color: var(--text-muted); }
+
+/* --- Blockquote --- */
+.quote-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  gap: clamp(24px, 4vw, 60px);
+  text-align: left;
+  border-top: 1px solid var(--border);
+  padding-top: clamp(38px, 6vw, 70px);
+}
+.quote-mark { color: var(--accent); font-size: 2.2rem; line-height: 1; }
+blockquote.q {
+  margin: 14px 0 0;
+  font-size: clamp(1.15rem, 2vw, 1.5rem);
+  line-height: 1.45;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+.q-attr { margin-top: 20px; font-family: var(--font-mono); font-size: 0.78rem; letter-spacing: 1px; color: var(--text-dim); text-transform: uppercase; }
+.q-role { color: var(--text-muted); font-family: var(--font-body); text-transform: none; letter-spacing: 0; font-size: 0.92rem; margin-top: 4px; }
+
+/* --- Story cards (their CustomerStories 3-up) --- */
+.stories {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+  border-top: 1px solid var(--border);
+}
+.story {
+  padding: clamp(28px, 3.4vw, 48px) clamp(18px, 2.4vw, 34px);
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: center;
+  text-align: center;
+  transition: background 0.2s;
+}
+.story:last-child { border-right: 0; }
+.story.is-featured { background: linear-gradient(180deg, #1a2030, #0f1218); }
+.story-logo {
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.story-label { font-size: 0.82rem; color: var(--text-muted); }
+.story-desc { color: var(--text-dim); font-size: 1.02rem; line-height: 1.45; }
+
+/* --- Closing CTA --- */
+.closing {
+  text-align: center;
+  padding: clamp(80px, 13vh, 150px) 0;
+}
+
+/* --- Footer, four columns + legal bar --- */
+.foot-news { padding: clamp(28px, 4vw, 46px) 0 0; }
+/* Spacing lived in inline styles, which left the button crowding the sentence
+   above it. Kept here so the rhythm is visible in one place. */
+.foot-news .site-brand { margin-bottom: 20px; }
+.foot-news .foot-kicker { margin: 0; }
+.foot-news .muted {
+  margin: 14px 0 0;
+  max-width: 46ch;
+  line-height: 1.65;
+}
+.foot-news .btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 26px;
+}
+.foot-kicker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  letter-spacing: 1.6px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+.foot-kicker::before {
+  content: '';
+  width: 9px;
+  height: 14px;
+  background: var(--accent);
+  flex: none;
+}
+.foot-cols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
+  gap: clamp(20px, 3vw, 48px);
+  padding: clamp(22px, 3vw, 38px) 0 clamp(20px, 3vw, 34px);
+  margin-top: clamp(18px, 2.4vw, 30px);
+}
+/* Each column carries its own rule, so the gaps in the grid break the line
+   into segments rather than running one hairline edge to edge. */
+.foot-col {
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+.foot-col h4 {
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin: 0 0 14px;
+}
+.foot-col ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.foot-col a { color: var(--text-dim); text-decoration: none; font-size: 0.94rem; }
+.foot-col a:hover { color: var(--text); text-decoration: underline; }
+.foot-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 26px;
+  align-items: center;
+  padding: 16px 0 18px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.8px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none; }
+}
+@media (max-width: 720px) {
+  .stat-cell, .story { border-right: 0; }
+}

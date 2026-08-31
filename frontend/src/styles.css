@@ -2,6 +2,21 @@
    Dark-only by design: this is a shop tool that lives on a screen next to the
    car, and the team identity is dark. Dirt-orange accent, Oswald + Inter. */
 
+/* Metric-matched stand-in for Oswald, used only for the moment before the
+   webfont arrives. Oswald is condensed; system-ui is not, so the untouched
+   fallback renders the hero wordmark far wider than the viewport — it
+   overflowed its grid column and dragged the whole hero flush left on first
+   paint. size-adjust brings the fallback's advance widths close enough that
+   the line fits, and the swap barely moves. */
+@font-face {
+  font-family: 'Oswald fallback';
+  src: local('Arial Narrow'), local('Helvetica Neue Condensed Bold'), local('Arial');
+  size-adjust: 76%;
+  ascent-override: 105%;
+  descent-override: 25%;
+  line-gap-override: 0%;
+}
+
 :root {
   --bg: #0e0f12;
   --bg-soft: #15171c;
@@ -11,12 +26,18 @@
   --text-dim: #aab0bc;
   --text-muted: #767d8c;
   --accent: #ff6a1a;
+  /* Header height. The hero reads it to sit underneath the bar. */
+  --nav-h: 68px;
   --accent-2: #ffb547;
   --accent-soft: rgba(255, 106, 26, 0.12);
   --border: #2a2e37;
+  /* Tree edges sit above --border: they are structure you follow, not a
+     divider you ignore. */
+  --tree-edge: #39404e;
+  --tree-edge-strong: var(--accent);
   --radius: 12px;
   --radius-sm: 8px;
-  --font-head: 'Oswald', system-ui, sans-serif;
+  --font-head: 'Oswald', 'Oswald fallback', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
 
@@ -41,16 +62,26 @@ body {
   font-family: var(--font-body);
   background: var(--bg);
   color: var(--text);
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
 }
 
 #root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The tracker is a fixed-viewport app: it never scrolls the page, its panes
+   scroll internally. The marketing pages are ordinary scrolling documents.
+   That constraint therefore belongs to the /app route (see Root.tsx), not to
+   body — putting it on body means the landing page cannot scroll at all. */
+.app-shell {
   height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 button,
@@ -424,20 +455,21 @@ a {
   color: inherit;
 }
 
-/* Hierarchy guides — monospaced so every column aligns down the whole list,
-   the way the DOS `tree` command draws it. */
-.guides {
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  line-height: 1;
-  white-space: pre;
-  color: var(--border);
+/* Drawn hierarchy edges. The negative margin cancels the row's flex gap so the
+   layer's right edge meets the twisty exactly — that shared boundary is what
+   puts a child's riser under its parent's twisty. Don't add padding here. */
+.tree-edges {
   flex: none;
-  user-select: none;
-  letter-spacing: 0;
+  margin-right: -8px;
+  overflow: visible;
 }
-.row.is-match .guides {
-  color: var(--text-muted);
+/* Both are read by TreeEdges through stroke="var(--tree-edge)", so overriding
+   the token here re-colours the SVG without the component knowing. */
+.row.is-match .tree-edges {
+  --tree-edge: var(--text-muted);
+}
+.row:hover .tree-edges {
+  --tree-edge: #4a5365;
 }
 
 /* ===== Connection gutter ===== */
@@ -561,10 +593,31 @@ a {
   border-radius: 50%;
   flex: none;
 }
+/* The run between a row and the connection gutter. Always present as the flex
+   spacer that pushes the tag dots right; only visible once the row is on a
+   lane, when it becomes the line joining the two. */
+.row-leader {
+  flex: 1 1 auto;
+  min-width: 12px;
+  height: 1px;
+  align-self: center;
+}
+.row.connected .row-leader {
+  background: repeating-linear-gradient(
+    to right,
+    var(--leader) 0 3px,
+    transparent 3px 7px
+  );
+  opacity: 0.5;
+}
+.row.connected:hover .row-leader,
+.row.selected .row-leader {
+  opacity: 0.85;
+}
+
 .row-tags {
   display: flex;
   gap: 4px;
-  margin-left: auto;
   flex: none;
   align-items: center;
 }

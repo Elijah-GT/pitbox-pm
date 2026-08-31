@@ -15,8 +15,16 @@ to just what you care about.
 .\dev.ps1
 ```
 
+On macOS / Linux use `./dev.sh`.
+
 Then open **http://localhost:5173**. (Use `localhost`, not `127.0.0.1` — Vite
 binds to the IPv6 loopback.)
+
+| Page | What it is |
+|---|---|
+| `/` | Landing page — what Baja SAE is, and what this tool does |
+| `/app` | The tracker |
+| `/login`, `/signup` | Forms only; there is no auth backend yet |
 
 **Backend only**, serving the no-build UI (or the built React app if you have
 run `npm run build`):
@@ -104,7 +112,7 @@ dashed pills with a jump-to-source button.
 ## Tests
 
 ```bash
-.venv/Scripts/python -m pip install -r requirements-dev.txt
+.venv/Scripts/python -m pip install -r requirements.txt
 .venv/Scripts/python -m pytest tests -q
 ```
 

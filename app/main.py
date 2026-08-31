@@ -11,7 +11,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -93,15 +93,39 @@ if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
-@app.get("/", include_in_schema=False)
-def index(member: Member | None = Depends(current_member_optional)):  # noqa: ARG001
-    # Only password mode has a login page to send people to. Under Cloudflare
-    # Access an unidentified request means the tunnel was bypassed, and
-    # require_member raises a 403 that explains that.
-    if member is None and settings.auth_mode == "password":
-        return RedirectResponse("/login", status_code=302)
+def _spa_index():
     if VITE_DIST.exists():
         return FileResponse(VITE_DIST / "index.html")
     if STATIC_DIR.exists():
         return FileResponse(STATIC_DIR / "index.html")
     return {"detail": "No frontend built. Run 'npm run build' in frontend/, or use /docs."}
+
+
+@app.get("/", include_in_schema=False)
+def index(member: Member | None = Depends(current_member_optional)):
+    # Only password mode has a login page to send people to. Under Cloudflare
+    # Access an unidentified request means the tunnel was bypassed, and
+    # require_member raises a 403 that explains that.
+    if member is None and settings.auth_mode == "password":
+        return RedirectResponse("/login", status_code=302)
+    return _spa_index()
+
+
+# The React app owns its URLs (/app, /login, ...) and routes them in the browser.
+# On a hard refresh or a pasted link the browser asks the SERVER for that path
+# first, so without this catch-all every page but / would 404 in production.
+# Development hides the problem: Vite serves index.html for unknown paths itself.
+#
+# Declared last so it cannot shadow anything real -- /api/*, /assets and /static
+# are all registered above and still win. Unknown /api paths must keep returning
+# a JSON 404 rather than the HTML shell, or a typo'd fetch resolves as a 200 page
+# and fails somewhere much less obvious.
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str):
+    if full_path.startswith(("api/", "assets/", "static/")) or full_path in {
+        "docs",
+        "redoc",
+        "openapi.json",
+    }:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _spa_index()
