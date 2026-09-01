@@ -403,19 +403,34 @@ export default function App() {
           <p className="hint">Drag a row onto another to re-parent it. Right-click for actions.</p>
         </section>
 
-        <section className="pane detail-pane" aria-label="Node details">
+        {/* has-node drives the mobile layout: with nothing selected the detail
+            pane is hidden entirely on a phone rather than taking half the
+            screen to say "select a part", and the tree gets the whole view. */}
+        <section
+          className={`pane detail-pane${detail ? ' has-node' : ''}`}
+          aria-label="Node details"
+        >
           {detail && index ? (
-            <DetailPanel
-              node={detail}
-              ancestors={ancestors}
-              tags={tree?.tags ?? []}
-              members={tree?.members ?? []}
-              onSelect={setSelectedId}
-              onAddChild={(n) => void addChild(n)}
-              onChanged={() => void refresh()}
-              onError={showError}
-              onBusy={show}
-            />
+            <>
+              <button
+                type="button"
+                className="btn detail-close"
+                onClick={() => setSelectedId(null)}
+              >
+                ← Back to tree
+              </button>
+              <DetailPanel
+                node={detail}
+                ancestors={ancestors}
+                tags={tree?.tags ?? []}
+                members={tree?.members ?? []}
+                onSelect={setSelectedId}
+                onAddChild={(n) => void addChild(n)}
+                onChanged={() => void refresh()}
+                onError={showError}
+                onBusy={show}
+              />
+            </>
           ) : (
             <div className="detail-empty">
               <p>Select a part to see its details, tags and files.</p>

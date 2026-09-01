@@ -59,6 +59,9 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  /* dvh tracks the collapsing address bar on mobile; 100vh alone leaves the
+     bottom of the app permanently under Safari's toolbar. */
+  height: 100dvh;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   font-size: 14px;
@@ -66,6 +69,7 @@ body {
 
 #root {
   height: 100vh;
+  height: 100dvh;
   display: flex;
   flex-direction: column;
 }
@@ -133,6 +137,16 @@ a {
   margin-left: auto;
   display: flex;
   gap: 8px;
+}
+
+/* The mobile filter toggle and its wrapper. On a wide screen the wrapper is
+   `display: contents`, so its children participate in .filterbar's flex layout
+   exactly as they did before it existed -- the desktop rendering is unchanged. */
+.filter-toggle {
+  display: none;
+}
+.filter-rest {
+  display: contents;
 }
 
 /* ===== Controls ===== */
@@ -897,5 +911,188 @@ a {
   }
   .chips {
     max-width: 100%;
+  }
+}
+
+/* The close button is a mobile affordance only; on desktop the detail pane is
+   always on screen and you move on by clicking another row. Declared BEFORE the
+   phone block on purpose -- a media query adds no specificity, so if this came
+   afterwards it would override the mobile rule and hide the button there too. */
+.detail-close {
+  display: none;
+}
+
+/* ===== Phones ==========================================================
+   The desktop layout is two panes side by side under a wide filter bar. On a
+   phone that fell apart: the tag chips wrapped to five rows, the filter bar ate
+   most of the viewport, and the two panes then split what was left -- leaving
+   the tree, which is the entire point of the page, about forty pixels tall.
+
+   So on a narrow screen:
+     * the filter bar collapses behind a Filters button (search stays visible)
+     * the tree gets the whole viewport
+     * the detail pane is not rendered as a half-screen "nothing selected"
+       placeholder; it slides up as a sheet only once a part is tapped
+     * touch targets go to 44px, the iOS/Android minimum
+   ====================================================================== */
+@media (max-width: 720px) {
+  /* --- top bar: two rows, actions scroll sideways rather than truncate --- */
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  .topbar > select.input {
+    order: 3;
+    width: 100%;
+    min-height: 44px;
+  }
+  .topbar-actions {
+    order: 2;
+    margin-left: auto;
+    overflow-x: auto;
+    /* Let the row scroll instead of squashing the project picker to a stub. */
+    max-width: 100%;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .topbar-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .topbar-actions .btn {
+    white-space: nowrap;
+    min-height: 40px;
+  }
+  /* The signed-in name is not worth a row of its own on a 390px screen. */
+  .whoami {
+    display: none;
+  }
+
+  /* --- filter bar: collapsed by default --- */
+  .filterbar {
+    gap: 8px;
+    padding: 8px 12px;
+    align-items: stretch;
+  }
+  .filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    order: -1;
+    flex: none;
+  }
+  .filterbar .search {
+    /* Shares a row with the Filters button rather than claiming a full one --
+       every row of chrome here is a row the tree does not get. */
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 44px;
+  }
+  .filter-rest {
+    display: none;
+  }
+  .filterbar.open .filter-rest {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    /* Long tag lists stay reachable without pushing the tree off-screen. */
+    max-height: 45vh;
+    overflow-y: auto;
+    padding-bottom: 4px;
+  }
+  .filterbar .chips {
+    max-width: 100%;
+  }
+  .filterbar .segmented button,
+  .filterbar .check,
+  .filterbar .btn {
+    min-height: 40px;
+  }
+  .filterbar .input.compact {
+    min-height: 40px;
+    flex: 1 1 45%;
+  }
+
+  /* --- layout: one column, tree owns the screen --- */
+  .layout {
+    grid-template-columns: 1fr;
+    /* A single row, not `1fr 1fr`: the detail pane is an overlay here, so it
+       must not reserve half the grid while empty. */
+    grid-template-rows: 1fr;
+  }
+  .tree-pane {
+    border-right: 0;
+    border-bottom: 0;
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .pane-head {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+  /* The connection gutter draws its lanes in a column to the right of the row
+     names. There is no room for that column on a 375px screen, so the picker
+     that drives it is hidden rather than left as ~200px of controls for a
+     feature that cannot render. It returns as soon as the screen is wide
+     enough; nothing about the state changes. */
+  .connbar {
+    display: none;
+  }
+  .pane-head h2 {
+    flex: 1;
+  }
+  .pane-head-actions {
+    margin-left: auto;
+  }
+  .pane-head-actions .btn {
+    min-height: 40px;
+  }
+  /* Drag-to-reparent and right-click do not exist on touch, so the hint is
+     just noise taking a line. Long-press still opens the context menu. */
+  .hint {
+    display: none;
+  }
+
+  /* --- detail: a sheet over the tree, only when a part is selected --- */
+  .detail-pane {
+    display: none;
+  }
+  .detail-pane.has-node {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    top: 25%;
+    z-index: 40;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    box-shadow: 0 -18px 40px -18px rgba(0, 0, 0, 0.9);
+    overflow-y: auto;
+  }
+  .detail-close {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    width: 100%;
+    min-height: 44px;
+    border-radius: var(--radius) var(--radius) 0 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  /* --- tree rows: comfortable to tap --- */
+  .tree-row {
+    min-height: 34px;
+  }
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 }
