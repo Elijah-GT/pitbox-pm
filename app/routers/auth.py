@@ -73,6 +73,33 @@ def me(member: Member = Depends(security.require_member)):
     return member
 
 
+@router.patch("/api/auth/me", response_model=schemas.MemberOut)
+def update_own_profile(
+    payload: schemas.ProfileUpdate,
+    db: DbSession = Depends(get_db),
+    member: Member = Depends(security.require_member),
+):
+    """Set your own display name.
+
+    Self-service on purpose, with no admin check: under Cloudflare Access a new
+    member is created from their email address, which at a lot of schools is an
+    ID like W1234567. Nobody can tell who that is on an assignee dropdown, and
+    making an admin fix it by hand is exactly the sort of chore this app is
+    meant not to have.
+
+    Only name and subteam. Email is the identity Cloudflare verified, so it is
+    not editable here -- changing it would let someone become a teammate on
+    their next request.
+    """
+    member.name = payload.name.strip()
+    if payload.subteam is not None:
+        member.subteam = payload.subteam.strip() or None
+    member.name_confirmed = True
+    db.commit()
+    db.refresh(member)
+    return member
+
+
 @router.post("/api/auth/password", status_code=204)
 def change_own_password(
     payload: schemas.PasswordChange,

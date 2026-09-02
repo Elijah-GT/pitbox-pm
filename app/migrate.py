@@ -30,6 +30,7 @@ ADDITIONS: dict[str, dict[str, str]] = {
         "password_hash": "VARCHAR(255)",
         "is_admin": "BOOLEAN NOT NULL DEFAULT 0",
         "last_login_at": "DATETIME",
+        "name_confirmed": "BOOLEAN NOT NULL DEFAULT 0",
     },
 }
 

@@ -116,6 +116,8 @@ export interface Member {
   is_admin?: boolean
   /** Whether this member can sign in at all. The hash never leaves the server. */
   has_password?: boolean
+  /** False when the name was derived from an email rather than typed by them. */
+  name_confirmed?: boolean
 }
 
 export interface TreeResponse {

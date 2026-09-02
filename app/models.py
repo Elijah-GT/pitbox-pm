@@ -99,6 +99,11 @@ class Member(Base):
     password_hash: Mapped[str | None] = mapped_column(String(255))
     # Admins manage the roster. Everyone else just uses the app.
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # False means the name was derived from an email local part rather than
+    # typed by the person. Under Cloudflare Access a new member arrives as
+    # whatever their address happens to be -- often a school ID like W1234567 --
+    # so the app asks them once who they actually are.
+    name_confirmed: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -38,7 +38,9 @@ def create_member(
         clash = db.scalar(select(Member).where(func.lower(Member.email) == payload.email.lower()))
         if clash:
             raise HTTPException(409, "A member with that email already exists.")
-    member = Member(**payload.model_dump())
+    # A name typed into the roster form came from a person, so it does not need
+    # the "who are you really?" prompt that an email-derived name triggers.
+    member = Member(**payload.model_dump(), name_confirmed=True)
     db.add(member)
     db.commit()
     db.refresh(member)

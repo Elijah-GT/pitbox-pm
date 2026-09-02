@@ -900,6 +900,55 @@ def test_team_domain_accepts_whatever_shape_you_paste(given):
     assert access_jwt.normalize_team_domain(given) == "myteam.cloudflareaccess.com"
 
 
+# --- display names ------------------------------------------------------------
+
+def test_access_member_starts_unconfirmed_and_can_name_themselves(anon):
+    """A school address is often an ID, not a name. The member is created with
+    name_confirmed=False so the UI knows to ask, and setting a name is
+    self-service -- no admin has to fix it."""
+    with cloudflare_mode():
+        token = make_token("w1234567@school.edu")
+        me = anon.get("/api/auth/me", headers={JWT_HEADER: token}).json()
+        assert me["name"] == "W1234567"          # derived from the address
+        assert me["name_confirmed"] is False
+
+        res = anon.patch("/api/auth/me", headers={JWT_HEADER: token},
+                         json={"name": "  Dana Whitfield  ", "subteam": "Brakes"})
+        assert res.status_code == 200, res.text
+        updated = res.json()
+        assert updated["name"] == "Dana Whitfield"   # trimmed
+        assert updated["subteam"] == "Brakes"
+        assert updated["name_confirmed"] is True
+
+        # Sticks, and is not asked for again.
+        again = anon.get("/api/auth/me", headers={JWT_HEADER: token}).json()
+        assert again["name"] == "Dana Whitfield"
+        assert again["name_confirmed"] is True
+
+
+def test_you_cannot_change_your_email_through_the_profile_endpoint(anon):
+    """Email is the identity Cloudflare verified. If it were editable, someone
+    could point their record at a teammate's address and become them."""
+    with cloudflare_mode():
+        token = make_token("impostor@school.edu")
+        anon.get("/api/auth/me", headers={JWT_HEADER: token})
+        anon.patch("/api/auth/me", headers={JWT_HEADER: token},
+                   json={"name": "Nice Try", "email": "captain@school.edu"})
+        me = anon.get("/api/auth/me", headers={JWT_HEADER: token}).json()
+        assert me["email"] == "impostor@school.edu"
+
+
+def test_naming_yourself_requires_being_signed_in(anon):
+    with cloudflare_mode():
+        assert anon.patch("/api/auth/me", json={"name": "Nobody"}).status_code == 403
+
+
+def test_a_roster_member_added_by_hand_is_already_named(client):
+    """Someone typed that name, so they should never see the "who are you?" prompt."""
+    m = client.post("/api/members", json={"name": "Typed By A Human"}).json()
+    assert m["name_confirmed"] is True
+
+
 # --- the other modes ----------------------------------------------------------
 
 def test_built_in_login_is_disabled_outside_password_mode(anon):

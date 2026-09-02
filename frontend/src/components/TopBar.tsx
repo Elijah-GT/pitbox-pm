@@ -10,11 +10,12 @@ interface Props {
   onNew: () => void
   onClone: () => void
   onDelete: () => void
+  onEditName: () => void
   onSignOut: () => void
 }
 
 export function TopBar({
-  projects, projectId, currentUser, authMode, onSwitch, onNew, onClone, onDelete, onSignOut,
+  projects, projectId, currentUser, authMode, onSwitch, onNew, onClone, onDelete, onEditName, onSignOut,
 }: Props) {
   return (
     <header className="topbar">
@@ -88,10 +89,23 @@ export function TopBar({
         </button>
 
         {currentUser && (
-          <span className="whoami" title={currentUser.email ?? undefined}>
+          // Clickable, because under Cloudflare Access this starts life as
+          // whatever the email local part was. The unset state is flagged so a
+          // teammate showing as "W1234567" is obviously fixable, not permanent.
+          <button
+            type="button"
+            className={`whoami${currentUser.name_confirmed === false ? ' unnamed' : ''}`}
+            title={
+              currentUser.name_confirmed === false
+                ? 'This name came from your email — click to set your real name'
+                : `${currentUser.email ?? ''} — click to change your display name`
+            }
+            onClick={onEditName}
+          >
             {currentUser.name}
+            {currentUser.name_confirmed === false && <span className="count">set name</span>}
             {currentUser.is_admin && <span className="admin-pip">admin</span>}
-          </span>
+          </button>
         )}
         {/* auth_mode=none has nothing to sign out of. Under Cloudflare Access
             the session belongs to Cloudflare, so the button hands off to their

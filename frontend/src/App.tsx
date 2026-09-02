@@ -49,6 +49,9 @@ export default function App() {
   // keeps the user's open branches but a project switch starts fresh.
   const expandedFor = useRef<number | null>(null)
 
+  // The "who are you?" prompt is once per session, never on a re-render.
+  const askedForName = useRef(false)
+
   const index = useMemo(() => (tree ? buildIndex(tree) : null), [tree])
 
   const visibility = useMemo(
@@ -331,6 +334,41 @@ export default function App() {
     }
   }
 
+  const setMyName = useCallback(
+    async (currentName: string, firstTime: boolean) => {
+      const message = firstTime
+        ? `You are showing up as "${currentName}".
+
+` +
+          'That comes from your email address. Enter your name so teammates can ' +
+          'tell who is assigned to what:'
+        : 'Your display name:'
+      const name = prompt(message, firstTime ? '' : currentName)
+      if (name === null) return
+      if (!name.trim()) return
+      try {
+        const updated = await api.updateProfile({ name: name.trim() })
+        setCurrentUser(updated)
+        // The assignee dropdown reads from the tree payload, so refresh it.
+        if (projectId != null) await loadTree(projectId)
+        show(`You are now shown as "${updated.name}".`)
+      } catch (err) {
+        showError(err)
+      }
+    },
+    [projectId, loadTree, show, showError],
+  )
+
+  // First visit after Cloudflare let them in: their name is still the email
+  // local part. Ask once. auth_mode=none is the shared local dev user, which
+  // nobody needs to name.
+  useEffect(() => {
+    if (askedForName.current || authMode === 'none') return
+    if (!currentUser || currentUser.name_confirmed) return
+    askedForName.current = true
+    void setMyName(currentUser.name, true)
+  }, [currentUser, authMode, setMyName])
+
   const toggle = (id: number) => {
     setExpanded((cur) => {
       const next = new Set(cur)
@@ -362,6 +400,9 @@ export default function App() {
         onNew={() => void newProject()}
         onClone={() => void cloneProject()}
         onDelete={() => void deleteProject()}
+        onEditName={() =>
+          void setMyName(currentUser?.name ?? '', false)
+        }
         onSignOut={() => {
           if (authMode === 'cloudflare') {
             // Cloudflare owns the session; this clears their cookie and the

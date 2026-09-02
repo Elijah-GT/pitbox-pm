@@ -88,6 +88,10 @@ export const api = {
   me: () => request<Member>('/api/auth/me'),
   logout: () => request<void>('/api/auth/logout', { method: 'POST' }),
 
+  /** Set your own display name. Self-service — no admin needed. */
+  updateProfile: (payload: { name: string; subteam?: string | null }) =>
+    withJson<Member>('PATCH')('/api/auth/me', payload),
+
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
 
   createProject: (payload: {

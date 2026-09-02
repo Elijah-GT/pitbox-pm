@@ -918,6 +918,20 @@ a {
    always on screen and you move on by clicking another row. Declared BEFORE the
    phone block on purpose -- a media query adds no specificity, so if this came
    afterwards it would override the mobile rule and hide the button there too. */
+.whoami {
+  background: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+}
+.whoami:hover {
+  border-color: var(--border);
+}
+.whoami.unnamed {
+  border-color: var(--brand);
+}
+
 .detail-close {
   display: none;
 }

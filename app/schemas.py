@@ -40,6 +40,17 @@ class MemberOut(MemberIn):
     is_admin: bool = False
     # password_hash is deliberately absent — this model is what the API returns.
     has_password: bool = False
+    name_confirmed: bool = False
+
+
+class ProfileUpdate(BaseModel):
+    """What a person may change about their OWN record.
+
+    Deliberately not email: that is the identity Cloudflare verified, and letting
+    someone edit it would let them impersonate a teammate on their next visit."""
+
+    name: str = Field(min_length=1, max_length=120)
+    subteam: str | None = Field(default=None, max_length=80)
 
 
 class LoginRequest(BaseModel):

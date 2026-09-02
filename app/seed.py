@@ -121,6 +121,17 @@ def ensure_default_tags(db: Session) -> list[Tag]:
     return created
 
 
+# The demo roster, named here so scripts/remove_demo_members.py deletes exactly
+# these and cannot drift out of sync with what gets seeded.
+DEMO_MEMBER_NAMES = (
+    "Alex Rivera",
+    "Priya Nair",
+    "Sam Okafor",
+    "Jordan Blake",
+    "Casey Lam",
+)
+
+
 def seed_demo(db: Session) -> Project | None:
     """Populate a realistic-looking car so the UI has something to show on a
     fresh clone. Returns None if any project already exists."""
