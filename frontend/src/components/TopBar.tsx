@@ -9,11 +9,12 @@ interface Props {
   onSwitch: (id: number) => void
   onNew: () => void
   onClone: () => void
+  onDelete: () => void
   onSignOut: () => void
 }
 
 export function TopBar({
-  projects, projectId, currentUser, authMode, onSwitch, onNew, onClone, onSignOut,
+  projects, projectId, currentUser, authMode, onSwitch, onNew, onClone, onDelete, onSignOut,
 }: Props) {
   return (
     <header className="topbar">
@@ -73,6 +74,18 @@ export function TopBar({
         >
           Export CSV
         </a>
+        {/* Sits after the everyday actions and is styled as a danger control, so
+            it does not sit next to "Clone" looking like another routine button.
+            The handler makes you type the tree's name -- there is no undo. */}
+        <button
+          type="button"
+          className="btn btn-danger"
+          onClick={onDelete}
+          disabled={projectId == null}
+          title="Permanently delete the selected tree"
+        >
+          Delete tree
+        </button>
 
         {currentUser && (
           <span className="whoami" title={currentUser.email ?? undefined}>

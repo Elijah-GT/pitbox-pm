@@ -628,6 +628,37 @@ def test_cannot_deactivate_the_last_admin(client):
     assert res.status_code == 400
 
 
+def test_deleting_a_project_removes_it_and_its_nodes_only(client):
+    """Deleting a tree takes its whole subtree with it and leaves other trees
+    alone. Reachable from the UI now, and there is no undo, so it is worth a
+    test that the blast radius is exactly one project."""
+    keep = client.post("/api/projects", json={
+        "name": "Keep Me", "season": "2030", "template": "blank"}).json()
+    doomed = client.post("/api/projects", json={
+        "name": "Doomed", "season": "2031", "template": "baja_standard"}).json()
+
+    doomed_nodes = _tree(client, doomed["id"])["nodes"]
+    assert len(doomed_nodes) > 1, "template should have produced a real tree"
+    keep_before = len(_tree(client, keep["id"])["nodes"])
+
+    assert client.delete(f"/api/projects/{doomed['id']}").status_code == 204
+
+    # Gone from the list, and gone from the database.
+    ids = [p["id"] for p in client.get("/api/projects").json()]
+    assert doomed["id"] not in ids
+    assert keep["id"] in ids
+    assert client.get(f"/api/projects/{doomed['id']}/tree").status_code == 404
+
+    # Its nodes went with it; the other project is untouched.
+    for node in doomed_nodes:
+        assert client.get(f"/api/nodes/{node['id']}").status_code == 404
+    assert len(_tree(client, keep["id"])["nodes"]) == keep_before
+
+
+def test_deleting_a_missing_project_is_404_not_a_crash(client):
+    assert client.delete("/api/projects/999999").status_code == 404
+
+
 # --- auth modes ---------------------------------------------------------------
 # The default deployment is Cloudflare Access: no accounts, no passwords, and
 # an identity proved by a signature rather than asserted by a header. These

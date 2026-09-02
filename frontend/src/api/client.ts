@@ -103,6 +103,9 @@ export const api = {
     reset_status?: Status
   }) => withJson<ProjectOut>('POST')('/api/projects/clone', payload),
 
+  deleteProject: (id: number) =>
+    request<void>(`/api/projects/${id}`, { method: 'DELETE' }),
+
   getTree: (projectId: number) => request<TreeResponse>(`/api/projects/${projectId}/tree`),
 
   getNode: (id: number) => request<NodeDetail>(`/api/nodes/${id}`),

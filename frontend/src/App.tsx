@@ -288,6 +288,49 @@ export default function App() {
     }
   }
 
+  const deleteProject = async () => {
+    if (projectId == null || !tree) return
+    const name = tree.project.name
+    const nodeCount = tree.nodes.length
+    // attachment_counts is a map keyed by node id, not a field on the node.
+    const fileCount = Object.values(tree.attachment_counts).reduce((a, b) => a + b, 0)
+
+    // Type-the-name rather than a plain confirm. This destroys a whole season's
+    // work in one click and there is no undo, so the cost of a slip is far
+    // higher than the cost of typing.
+    const typed = prompt(
+      `Permanently delete "${name}"?
+
+` +
+        `${nodeCount} node${nodeCount === 1 ? '' : 's'} and ${fileCount} file ` +
+        `attachment${fileCount === 1 ? '' : 's'} go with it. This cannot be undone.
+
+` +
+        `Type the tree's name to confirm:`,
+    )
+    if (typed === null) return
+    if (typed.trim() !== name) {
+      show('That did not match the name — nothing was deleted.', true)
+      return
+    }
+
+    try {
+      await api.deleteProject(projectId)
+      const list = await api.listProjects()
+      setProjects(list)
+      // Move to whatever is left, or to an empty state if that was the last one.
+      const next = list[0]?.id ?? null
+      expandedFor.current = null
+      setSelectedId(null)
+      setDetail(null)
+      if (next == null) setTree(null)
+      setProjectId(next)
+      show(`Deleted "${name}".`)
+    } catch (err) {
+      showError(err)
+    }
+  }
+
   const toggle = (id: number) => {
     setExpanded((cur) => {
       const next = new Set(cur)
@@ -318,6 +361,7 @@ export default function App() {
         onSwitch={switchProject}
         onNew={() => void newProject()}
         onClone={() => void cloneProject()}
+        onDelete={() => void deleteProject()}
         onSignOut={() => {
           if (authMode === 'cloudflare') {
             // Cloudflare owns the session; this clears their cookie and the
@@ -384,6 +428,13 @@ export default function App() {
           </div>
 
           {loading && <p className="loading">Loading…</p>}
+          {/* Deleting the last tree leaves nothing to render. Without this the
+              pane is simply blank, which reads as a bug rather than a state. */}
+          {!loading && projects.length === 0 && (
+            <p className="loading">
+              No trees yet — click “+ New Tree” to start one.
+            </p>
+          )}
           {!loading && index && visibility && (
             <TreeView
               index={index}
