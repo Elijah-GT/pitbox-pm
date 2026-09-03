@@ -155,10 +155,29 @@ This is the part that actually gates access.
 | Selector | **Emails ending in** |
 | Value | `@youruniversity.edu` |
 
-That single rule is the whole access-control system: anyone with a school email
-gets in, everyone else does not. If your school's addresses are inconsistent,
-use the **Emails** selector and list people instead — more precise, but then you
-are back to maintaining a list, which is the thing this design avoids.
+That single rule decides who can **get in**. It deliberately does not decide who
+can **delete things** — a domain-wide rule is the right shape for reading and
+much too broad for destroying, since it would let any student at the university
+wipe a subsystem. The app draws that second line itself: everyone signed in can
+read, any member can edit a part that already exists, and only admins can add,
+delete or restructure. The admin flag lives in the app's own database and team
+leads manage it from the **Team** button in the top bar. See "Who can change
+things" in the README.
+
+If your school's addresses are inconsistent, use the **Emails** selector and list
+people instead — more precise, but then you are back to maintaining a list, which
+is the thing this design avoids.
+
+One thing to do once, after your first sign-in: the account that signs in first
+on an empty database becomes the admin, but if you are adding this to an instance
+your team is already using, there will be members and no admin, and nobody will
+be able to edit anything. Promote yourself once from a shell:
+
+```bash
+fly ssh console -C "python scripts/grant_admin.py you@school.edu"
+```
+
+Everything after that happens in the app.
 
 **6.** Login methods: **One-time PIN** is on by default and needs no setup —
 Cloudflare emails a code. That is enough. If your school uses Google Workspace

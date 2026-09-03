@@ -92,6 +92,17 @@ export const api = {
   updateProfile: (payload: { name: string; subteam?: string | null }) =>
     withJson<Member>('PATCH')('/api/auth/me', payload),
 
+  /** The roster. Readable by anyone signed in — the assignee dropdown needs it. */
+  listMembers: () => request<Member[]>('/api/members?include_inactive=true'),
+
+  /**
+   * Promote or demote a teammate. Admin-only, and the server refuses to demote
+   * the last remaining admin, so the UI can offer the button and let the API
+   * be the authority rather than duplicating the rule and drifting from it.
+   */
+  setMemberAdmin: (id: number, isAdmin: boolean) =>
+    withJson<Member>('PATCH')(`/api/members/${id}/admin`, { is_admin: isAdmin }),
+
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
 
   createProject: (payload: {

@@ -6,16 +6,20 @@ interface Props {
   projectId: number | null
   currentUser: Member | null
   authMode: AuthMode
+  /** Admin. Controls that add, delete or restructure are hidden without it. */
+  isAdmin: boolean
   onSwitch: (id: number) => void
   onNew: () => void
   onClone: () => void
   onDelete: () => void
   onEditName: () => void
+  onManageTeam: () => void
   onSignOut: () => void
 }
 
 export function TopBar({
-  projects, projectId, currentUser, authMode, onSwitch, onNew, onClone, onDelete, onEditName, onSignOut,
+  projects, projectId, currentUser, authMode, isAdmin, onSwitch, onNew, onClone,
+  onDelete, onEditName, onManageTeam, onSignOut,
 }: Props) {
   return (
     <header className="topbar">
@@ -56,18 +60,29 @@ export function TopBar({
       </select>
 
       <div className="topbar-actions">
-        <button type="button" className="btn" onClick={onNew} title="Create a new tree">
-          + New Tree
-        </button>
-        <button
-          type="button"
-          className="btn"
-          onClick={onClone}
-          title="Start next year from this car"
-          disabled={projectId == null}
-        >
-          Clone
-        </button>
+        {/* Hidden rather than disabled for everyone who is not an admin. A row
+            of greyed-out buttons reads as "this app is broken for me"; showing
+            only what you can actually do reads as a normal, smaller app. The
+            server refuses these regardless -- see app/security.py. */}
+        {isAdmin && (
+          <>
+            <button type="button" className="btn" onClick={onNew} title="Create a new tree">
+              + New Tree
+            </button>
+            <button
+              type="button"
+              className="btn"
+              onClick={onClone}
+              title="Start next year from this car"
+              disabled={projectId == null}
+            >
+              Clone
+            </button>
+          </>
+        )}
+
+        {/* Export stays for everyone: it is a GET, and a member who can read
+            the tree on screen can obviously have it as a file. */}
         <a
           className="btn"
           href={projectId == null ? '#' : `/api/projects/${projectId}/export.csv`}
@@ -75,18 +90,49 @@ export function TopBar({
         >
           Export CSV
         </a>
-        {/* Sits after the everyday actions and is styled as a danger control, so
-            it does not sit next to "Clone" looking like another routine button.
-            The handler makes you type the tree's name -- there is no undo. */}
-        <button
-          type="button"
-          className="btn btn-danger"
-          onClick={onDelete}
-          disabled={projectId == null}
-          title="Permanently delete the selected tree"
-        >
-          Delete tree
-        </button>
+
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={onManageTeam}
+              title="Who can change things"
+            >
+              Team
+            </button>
+            {/* Sits after the everyday actions and is styled as a danger
+                control, so it does not sit next to "Clone" looking like another
+                routine button. The handler makes you type the tree's name --
+                there is no undo. */}
+            <button
+              type="button"
+              className="btn btn-danger"
+              onClick={onDelete}
+              disabled={projectId == null}
+              title="Permanently delete the selected tree"
+            >
+              Delete tree
+            </button>
+          </>
+        )}
+
+        {/* Says why the buttons above are missing, so a member does not file
+            it as a bug or go looking for a broken permission. It does NOT say
+            "view only" -- a member can edit every part they can see, and
+            telling them otherwise would stop them trying.
+
+            Gated on currentUser, not just on isAdmin: until /api/auth/me comes
+            back we do not know who this is, and an admin should not watch a
+            role badge appear and then vanish on every page load. */}
+        {currentUser && !isAdmin && authMode !== 'none' && (
+          <span
+            className="role-badge"
+            title="You can edit any part. Adding, deleting and managing trees is for team leads."
+          >
+            Member
+          </span>
+        )}
 
         {currentUser && (
           // Clickable, because under Cloudflare Access this starts life as

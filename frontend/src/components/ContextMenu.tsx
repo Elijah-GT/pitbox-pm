@@ -10,6 +10,8 @@ export interface MenuTarget {
 
 interface Props {
   target: MenuTarget
+  /** Admin. Without it the menu offers Rename and nothing else. */
+  isAdmin: boolean
   onClose: () => void
   onAddChild: () => void
   onRename: () => void
@@ -19,6 +21,7 @@ interface Props {
 
 export function ContextMenu({
   target,
+  isAdmin,
   onClose,
   onAddChild,
   onRename,
@@ -45,25 +48,33 @@ export function ContextMenu({
     fn()
   }
 
-  // Keep the menu inside the viewport near the right/bottom edges.
+  // Keep the menu inside the viewport near the right/bottom edges. A member's
+  // menu is one item tall, so it does not need the admin menu's clearance.
   const left = Math.min(target.x, window.innerWidth - 210)
-  const top = Math.min(target.y, window.innerHeight - 180)
+  const top = Math.min(target.y, window.innerHeight - (isAdmin ? 180 : 60))
 
   return (
     <div className="context-menu" style={{ left, top }} onClick={(e) => e.stopPropagation()}>
-      <button type="button" onClick={run(onAddChild)}>
-        Add child node
-      </button>
+      {isAdmin && (
+        <button type="button" onClick={run(onAddChild)}>
+          Add child node
+        </button>
+      )}
+      {/* Renaming a part is editing it, so every member gets this one. */}
       <button type="button" onClick={run(onRename)}>
         Rename
       </button>
-      <button type="button" onClick={run(onDuplicate)}>
-        Duplicate (with subtree)
-      </button>
-      <hr />
-      <button type="button" onClick={run(onDelete)}>
-        Delete (with subtree)
-      </button>
+      {isAdmin && (
+        <>
+          <button type="button" onClick={run(onDuplicate)}>
+            Duplicate (with subtree)
+          </button>
+          <hr />
+          <button type="button" onClick={run(onDelete)}>
+            Delete (with subtree)
+          </button>
+        </>
+      )}
     </div>
   )
 }

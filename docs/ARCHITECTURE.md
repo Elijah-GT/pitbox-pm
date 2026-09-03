@@ -69,11 +69,12 @@ frontend/         React + TypeScript + Vite (the primary UI)
   src/lib/filter.ts       The filtering algorithm — read this one
   src/lib/connections.ts  Non-hierarchical links drawn in the right gutter
   src/lib/tree.ts         Indexes + the DOS-style guide glyphs
-  src/components/         TreeView, DetailPanel, FilterBar, ConnectionPicker
+  src/components/         TreeView, DetailPanel, FilterBar, TeamPanel
 static/           The original no-build UI. Edit and refresh; no toolchain.
   js/filter.js    The same filtering algorithm, vanilla
-tests/            67 tests over the parts that are easy to break
-scripts/          backup.py (WAL-safe), gc_blobs.py (reclaim orphan files)
+tests/            90 tests over the parts that are easy to break
+scripts/          backup.py (WAL-safe), gc_blobs.py (reclaim orphan files),
+                  grant_admin.py (bootstrap the first admin)
 deploy/           serve.py + Task Scheduler XML (Windows), fly-entrypoint.sh
 docs/             SCHEMA, FRONTEND, CLOUDFLARE, FLY
 ```

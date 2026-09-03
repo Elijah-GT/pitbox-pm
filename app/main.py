@@ -25,7 +25,13 @@ from .database import SessionLocal, engine
 from .migrate import run_migrations
 from .models import Base, Member
 from .routers import attachments, auth, members, nodes, projects, tags
-from .security import current_member_optional, purge_expired_sessions, require_member
+from .security import (
+    count_admins,
+    current_member_optional,
+    purge_expired_sessions,
+    require_write_access,
+    validate_member_writable,
+)
 from .seed import ensure_default_tags, seed_demo
 
 STATIC_DIR = BASE_DIR / "static"        # the original zero-build UI
@@ -62,6 +68,17 @@ async def lifespan(_app: FastAPI):
         ensure_default_tags(db)
         seed_demo(db)  # no-op once any project exists
         purge_expired_sessions(db)
+
+        # A database with members but no admin is a locked instance: everyone
+        # can read, nobody can change anything, and the Team panel that would
+        # fix it is itself admin-only. Deliberately NOT self-healing -- quietly
+        # promoting someone would hand the app to whoever opened it next. Say
+        # what to run instead.
+        if count_admins(db) == 0:
+            log.warning(
+                "No admin accounts. Everyone can read; nobody can write. "
+                "Fix it with:  python scripts/grant_admin.py <email>"
+            )
     yield
 
 
@@ -96,12 +113,23 @@ if settings.allowed_host_list:
 # Auth first, and unguarded — you cannot require a session to sign in.
 app.include_router(auth.router)
 
-# Everything else requires one. Declaring it here rather than on each endpoint
-# means a new route is protected by default: you have to go out of your way to
-# expose something, instead of remembering to lock it down.
+# Everything else requires one, and gates what you may change on who you are.
+# Declaring both here rather than on each endpoint means a new route is
+# protected by default: you have to go out of your way to expose something,
+# instead of remembering to lock it down.
+#
+# require_write_access depends on require_member, so reads are still gated on
+# being signed in. It then splits writes three ways: reads for anyone signed
+# in, editing an existing part for any member, and adding/deleting/restructuring
+# for admins -- see security.MEMBER_WRITABLE for the exact line and why.
 PROTECTED = [projects.router, nodes.router, tags.router, attachments.router, members.router]
 for _router in PROTECTED:
-    app.include_router(_router, dependencies=[Depends(require_member)])
+    app.include_router(_router, dependencies=[Depends(require_write_access)])
+
+# Import-time, not request-time: if a route in the member allowlist has been
+# renamed, this instance refuses to start rather than quietly turning an
+# everyday member action into an admin-only one.
+validate_member_writable(PROTECTED)
 
 
 @app.get("/api/health")

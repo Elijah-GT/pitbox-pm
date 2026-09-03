@@ -43,6 +43,15 @@ class MemberOut(MemberIn):
     name_confirmed: bool = False
 
 
+class AdminUpdate(BaseModel):
+    """Promote or demote one member. Its own endpoint, and its own model, so
+    the flag can never ride along on a general member edit -- MemberIn has no
+    is_admin field, which is what stops PATCH /api/members/{id} from being a
+    self-promotion route."""
+
+    is_admin: bool
+
+
 class ProfileUpdate(BaseModel):
     """What a person may change about their OWN record.
 

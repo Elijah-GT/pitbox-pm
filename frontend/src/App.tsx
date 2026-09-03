@@ -6,6 +6,7 @@ import { ConnectionPicker } from './components/ConnectionPicker'
 import { ContextMenu, type MenuTarget } from './components/ContextMenu'
 import { DetailPanel } from './components/DetailPanel'
 import { FilterBar } from './components/FilterBar'
+import { TeamPanel } from './components/TeamPanel'
 import { TopBar } from './components/TopBar'
 import { TreeView } from './components/TreeView'
 import { useToast } from './hooks/useToast'
@@ -37,6 +38,19 @@ export default function App() {
   const [loading, setLoading] = useState(true)
   const [currentUser, setCurrentUser] = useState<Member | null>(null)
   const [authMode, setAuthMode] = useState<AuthMode>('cloudflare')
+  const [teamOpen, setTeamOpen] = useState(false)
+
+  // Three tiers, matching app/security.py exactly:
+  //   read      anyone signed in
+  //   canEdit   any member -- change a part, tag it, attach a file, drag it
+  //   isAdmin   add, delete, duplicate, and anything project- or team-wide
+  //
+  // These only hide controls. The server is what enforces the rule, and the two
+  // are independent on purpose: a stale or wrong value here shows the wrong
+  // buttons, but it never grants anything, because every write is checked
+  // against the verified token rather than against what the page believes.
+  const isAdmin = currentUser?.is_admin ?? false
+  const canEdit = currentUser != null
 
   // Non-hierarchical links drawn in the right gutter: which field, and which of
   // its values are currently being drawn.
@@ -396,6 +410,7 @@ export default function App() {
         projectId={projectId}
         currentUser={currentUser}
         authMode={authMode}
+        isAdmin={isAdmin}
         onSwitch={switchProject}
         onNew={() => void newProject()}
         onClone={() => void cloneProject()}
@@ -403,6 +418,7 @@ export default function App() {
         onEditName={() =>
           void setMyName(currentUser?.name ?? '', false)
         }
+        onManageTeam={() => setTeamOpen(true)}
         onSignOut={() => {
           if (authMode === 'cloudflare') {
             // Cloudflare owns the session; this clears their cookie and the
@@ -484,6 +500,8 @@ export default function App() {
               selectedId={selectedId}
               isolate={filter.mode === 'isolate'}
               groups={groups}
+              canEdit={canEdit}
+              isAdmin={isAdmin}
               onToggle={toggle}
               onSelect={setSelectedId}
               onAddChild={(n) => void addChild(n)}
@@ -492,7 +510,12 @@ export default function App() {
             />
           )}
 
-          <p className="hint">Drag a row onto another to re-parent it. Right-click for actions.</p>
+          {/* Both of these work for a plain member -- dragging re-parents, and
+              their right-click menu carries Rename -- so the hint stands for
+              anyone who can edit, and only disappears for a signed-out view. */}
+          {canEdit && (
+            <p className="hint">Drag a row onto another to re-parent it. Right-click for actions.</p>
+          )}
         </section>
 
         {/* has-node drives the mobile layout: with nothing selected the detail
@@ -516,6 +539,8 @@ export default function App() {
                 ancestors={ancestors}
                 tags={tree?.tags ?? []}
                 members={tree?.members ?? []}
+                canEdit={canEdit}
+                isAdmin={isAdmin}
                 onSelect={setSelectedId}
                 onAddChild={(n) => void addChild(n)}
                 onChanged={() => void refresh()}
@@ -531,14 +556,30 @@ export default function App() {
         </section>
       </main>
 
-      {menu && menuNode && (
+      {menu && menuNode && canEdit && (
         <ContextMenu
           target={menu}
+          isAdmin={isAdmin}
           onClose={() => setMenu(null)}
           onAddChild={() => void addChild(menuNode)}
           onRename={() => void renameNode(menuNode.id, menuNode.name)}
           onDuplicate={() => void duplicateNode(menuNode.id, menuNode.name)}
           onDelete={() => void deleteNode(menuNode.id, menuNode.name)}
+        />
+      )}
+
+      {teamOpen && (
+        <TeamPanel
+          currentUser={currentUser}
+          onClose={() => setTeamOpen(false)}
+          onChanged={() => {
+            // A promotion can change what THIS user may do (they can demote
+            // themselves), and names shown in the assignee dropdown come from
+            // the tree payload, so refresh both.
+            void api.me().then(setCurrentUser).catch(showError)
+            if (projectId != null) void loadTree(projectId)
+          }}
+          onError={showError}
         />
       )}
 

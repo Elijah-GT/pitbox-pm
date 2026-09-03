@@ -696,6 +696,25 @@ a {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
+  /* This is a <fieldset> (so `disabled` covers every field at once, including
+     ones added later). Its UA default border/padding/margin has to go, or the
+     details form picks up a box it never used to have. min-inline-size stops
+     the old fieldset behaviour of refusing to shrink below its content. */
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-inline-size: 0;
+}
+
+/* Read-only: still legible, obviously not editable. Greying the TEXT would
+   make a parts list a member is trying to read harder to read, so the cue is
+   the field's background and cursor instead. */
+.field-grid:disabled .input,
+.field-grid:disabled textarea {
+  background: var(--bg-soft);
+  color: var(--text-dim);
+  cursor: default;
+  opacity: 1;
 }
 .field {
   display: flex;
@@ -949,7 +968,131 @@ a {
        placeholder; it slides up as a sheet only once a part is tapped
      * touch targets go to 44px, the iOS/Android minimum
    ====================================================================== */
+/* --- read-only marker and the Team panel ---------------------------------- */
+
+/* Sits where the New Tree / Delete buttons would be for an admin, so their
+   absence is explained rather than looking like a half-loaded toolbar. It
+   names the role rather than claiming "view only", which stopped being true
+   once members could edit. */
+.role-badge {
+  align-self: center;
+  font-family: var(--font-head);
+  font-size: 0.62rem;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.6);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(560px, 100%);
+  /* dvh, not vh: on a phone the browser chrome would otherwise push the bottom
+     of the panel off screen. */
+  max-height: min(80dvh, 720px);
+  overflow-y: auto;
+  padding: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.modal-head h2 {
+  font-family: var(--font-head);
+  font-size: 1.05rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.modal-note {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
+.team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.team-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 8px;
+  border-radius: var(--radius-sm);
+  border-top: 1px solid var(--border);
+}
+.team-row:first-child {
+  border-top: 0;
+}
+.team-row.inactive {
+  opacity: 0.55;
+}
+.team-who {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.team-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.9rem;
+}
+.team-email {
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-note {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  white-space: nowrap;
+}
+.team-row .btn {
+  flex-shrink: 0;
+}
+
 @media (max-width: 720px) {
+  /* A row that wraps beats a name column squeezed to nothing next to a
+     "Remove admin" button. */
+  .modal {
+    max-height: 88dvh;
+    padding: 14px;
+  }
+  .team-row {
+    flex-wrap: wrap;
+  }
+  .team-row .btn {
+    min-height: 36px;
+  }
+
   /* --- top bar: two rows, actions scroll sideways rather than truncate --- */
   .topbar {
     height: auto;

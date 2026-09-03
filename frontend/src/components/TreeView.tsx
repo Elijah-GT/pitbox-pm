@@ -27,6 +27,10 @@ interface Props {
   selectedId: number | null
   isolate: boolean
   groups: ConnectionGroup[]
+  /** Any signed-in member: may drag to re-parent and open the row menu. */
+  canEdit: boolean
+  /** Admin: may add a child straight from a row. */
+  isAdmin: boolean
   onToggle: (id: number) => void
   onSelect: (id: number) => void
   onAddChild: (node: TreeNode) => void
@@ -41,6 +45,8 @@ export function TreeView({
   selectedId,
   isolate,
   groups,
+  canEdit,
+  isAdmin,
   onToggle,
   onSelect,
   onAddChild,
@@ -120,10 +126,13 @@ export function TreeView({
                 }
               }}
               onContextMenu={(e) => {
+                // Members get the menu too -- it carries Rename for them. With
+                // nothing to offer, the browser's own menu is more use.
+                if (!canEdit) return
                 e.preventDefault()
                 onContextMenu(node, e.clientX, e.clientY)
               }}
-              draggable
+              draggable={canEdit}
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/plain', String(node.id))
                 e.dataTransfer.effectAllowed = 'move'
@@ -134,7 +143,11 @@ export function TreeView({
                 setDropId(null)
               }}
               onDragOver={(e) => {
-                if (dragId === node.id) return
+                // Rows are not draggable without write access, but a file
+                // dragged in from the desktop still fires this. Bail, or a
+                // member who cannot re-parent anything watches rows light up
+                // as drop targets.
+                if (!canEdit || dragId === node.id) return
                 e.preventDefault()
                 e.dataTransfer.dropEffect = 'move'
                 setDropId(node.id)
@@ -184,19 +197,21 @@ export function TreeView({
               {node.part_number && <span className="node-pn">{node.part_number}</span>}
               {node.quantity > 1 && <span className="node-qty">{`x${node.quantity}`}</span>}
 
-              <button
-                type="button"
-                className="row-add"
-                title="Add a child node"
-                aria-label={`Add a child under ${node.name}`}
-                tabIndex={-1}
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onAddChild(node)
-                }}
-              >
-                +
-              </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  className="row-add"
+                  title="Add a child node"
+                  aria-label={`Add a child under ${node.name}`}
+                  tabIndex={-1}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onAddChild(node)
+                  }}
+                >
+                  +
+                </button>
+              )}
 
               <span className="row-tags">
                 {fileCount > 0 && <span className="file-pip">{`📎${fileCount}`}</span>}

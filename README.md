@@ -128,6 +128,57 @@ public URL rather than only behind a tunnel.
 The default fails closed twice over: it will not start without the means to
 verify a signature, and once running it returns 403 to anything not carrying one.
 
+### Who can change things
+
+Signing in and being allowed to change things are two different questions,
+because the Access policy that suits a team is usually "anyone with a school
+email address". That is the right rule for reading and a bad one for deleting —
+it would let any student at the university wipe a subsystem.
+
+There are three tiers:
+
+| | Who | What |
+|---|---|---|
+| **Read** | anyone signed in | see every tree, every part, every file |
+| **Edit** | any member | change a part that exists: status, assignee, cost, vendor, material, description; apply and remove tags; re-parent and reorder; upload files |
+| **Add / delete** | admins only | create and delete nodes, duplicate branches, delete files, everything project-wide (new tree, clone, rename, delete), the shared tag vocabulary, and the roster |
+
+The line is **edit versus add/delete**. Someone working on their own subsystem
+has to be able to mark a part ordered and set its cost without waiting on a
+lead — that is the daily job. What they cannot do is change the shape of the
+tree, because those are the actions that lose work.
+
+Enforcement is one dependency on the router (`app/main.py`), not a check per
+endpoint, so a route added later is admin-only from the moment it exists. The
+member-writable routes are an explicit allowlist in `security.MEMBER_WRITABLE`;
+anything absent from it needs an admin. `validate_member_writable()` runs at
+import and refuses to start the app if an entry there stops matching a real
+route, so renaming an endpoint fails loudly instead of quietly promoting an
+everyday action to admin-only.
+
+Two more things anyone may do, both about their own account rather than the
+team's data: `PATCH /api/auth/me` (set your own display name) and
+`POST /api/auth/password`.
+
+Admins are stored in the database and managed **in the app** — the **Team**
+button in the top bar, visible to admins only. Nobody needs a terminal, a
+hosting login, or a redeploy to hand over to next year's leads. The API refuses
+to demote or deactivate the last remaining admin, so there is no way to lock
+everyone out by accident.
+
+The first person to sign in on an empty database becomes the admin. That is the
+only automatic promotion; on a database that already has members, nobody is
+promoted by signing in. If you end up with a database that has members but no
+admin — which is what happens when you add this to an instance people are
+already using — fix it once from a shell:
+
+```bash
+python scripts/grant_admin.py you@school.edu
+```
+
+On Fly.io: `fly ssh console -C "python scripts/grant_admin.py you@school.edu"`.
+Run it with no email to list who is currently who.
+
 ### Backups
 
 `pitbox.db` runs in WAL mode, so **copying that file alone can silently lose most

@@ -10,6 +10,10 @@ interface Props {
   ancestors: TreeNode[]
   tags: Tag[]
   members: Member[]
+  /** Any signed-in member: the fields, tags and uploads are theirs to change. */
+  canEdit: boolean
+  /** Admin: adding a child and deleting a file. */
+  isAdmin: boolean
   onSelect: (id: number) => void
   onAddChild: (node: TreeNode) => void
   onChanged: () => void
@@ -22,6 +26,8 @@ export function DetailPanel({
   ancestors,
   tags,
   members,
+  canEdit,
+  isAdmin,
   onSelect,
   onAddChild,
   onChanged,
@@ -54,9 +60,11 @@ export function DetailPanel({
 
       <div className="detail-title">
         <h1>{node.name}</h1>
-        <button type="button" className="btn btn-sm btn-primary" onClick={() => onAddChild(node)}>
-          + Child
-        </button>
+        {isAdmin && (
+          <button type="button" className="btn btn-sm btn-primary" onClick={() => onAddChild(node)}>
+            + Child
+          </button>
+        )}
       </div>
 
       <div className="rollups">
@@ -79,13 +87,27 @@ export function DetailPanel({
       </div>
 
       <h3>Details</h3>
-      <MetadataForm node={node} members={members} onSave={save} />
+      <MetadataForm node={node} members={members} canEdit={canEdit} onSave={save} />
 
       <h3>Tags</h3>
-      <TagSection node={node} tags={tags} onSelect={onSelect} onChanged={onChanged} onError={onError} />
+      <TagSection
+        node={node}
+        tags={tags}
+        canEdit={canEdit}
+        onSelect={onSelect}
+        onChanged={onChanged}
+        onError={onError}
+      />
 
       <h3>{`Files (${node.attachments.length})`}</h3>
-      <FileSection node={node} onChanged={onChanged} onError={onError} onBusy={onBusy} />
+      <FileSection
+        node={node}
+        canEdit={canEdit}
+        isAdmin={isAdmin}
+        onChanged={onChanged}
+        onError={onError}
+        onBusy={onBusy}
+      />
     </div>
   )
 }
@@ -95,10 +117,12 @@ export function DetailPanel({
 function MetadataForm({
   node,
   members,
+  canEdit,
   onSave,
 }: {
   node: NodeDetail
   members: Member[]
+  canEdit: boolean
   onSave: (patch: Partial<TreeNode>) => void
 }) {
   const text = (
@@ -128,8 +152,11 @@ function MetadataForm({
     </div>
   )
 
+  // A disabled <fieldset> disables every control inside it, including any added
+  // to this form later. That is the point: the alternative is a disabled={} on
+  // each of fourteen fields, and a fifteenth that someone forgets.
   return (
-    <div className="field-grid">
+    <fieldset className="field-grid" disabled={!canEdit}>
       {text('Name', 'name', node.name, { wide: true })}
       {text('Part number', 'part_number', node.part_number)}
 
@@ -232,7 +259,7 @@ function MetadataForm({
           }}
         />
       </div>
-    </div>
+    </fieldset>
   )
 }
 
@@ -241,12 +268,14 @@ function MetadataForm({
 function TagSection({
   node,
   tags,
+  canEdit,
   onSelect,
   onChanged,
   onError,
 }: {
   node: NodeDetail
   tags: Tag[]
+  canEdit: boolean
   onSelect: (id: number) => void
   onChanged: () => void
   onError: (err: unknown) => void
@@ -275,21 +304,26 @@ function TagSection({
                 ↑
               </button>
             ) : (
-              <button
-                type="button"
-                title="Remove this tag"
-                aria-label={`Remove tag ${tag.name}`}
-                onClick={() => {
-                  api.removeTag(node.id, tag.tag_id).then(onChanged).catch(onError)
-                }}
-              >
-                ×
-              </button>
+              // The "jump to where this tag was set" arrow above is navigation
+              // and stays for everyone. This one removes the tag.
+              canEdit && (
+                <button
+                  type="button"
+                  title="Remove this tag"
+                  aria-label={`Remove tag ${tag.name}`}
+                  onClick={() => {
+                    api.removeTag(node.id, tag.tag_id).then(onChanged).catch(onError)
+                  }}
+                >
+                  ×
+                </button>
+              )
             )}
           </span>
         ))}
       </div>
 
+      {canEdit && (
       <div className="tag-list" style={{ marginTop: 8 }}>
         <select
           className="input compact"
@@ -322,6 +356,7 @@ function TagSection({
           <span>apply to whole branch</span>
         </label>
       </div>
+      )}
 
       {hasInherited && (
         <p className="tag-note">
@@ -336,11 +371,15 @@ function TagSection({
 
 function FileSection({
   node,
+  canEdit,
+  isAdmin,
   onChanged,
   onError,
   onBusy,
 }: {
   node: NodeDetail
+  canEdit: boolean
+  isAdmin: boolean
   onChanged: () => void
   onError: (err: unknown) => void
   onBusy: (message: string) => void
@@ -372,20 +411,32 @@ function FileSection({
             <span className="file-meta">{`v${file.version}${file.is_current ? '' : ' (old)'}`}</span>
           )}
           <span className="file-meta">{humanSize(file.size_bytes)}</span>
-          <button
-            type="button"
-            className="btn btn-sm btn-danger"
-            title="Delete this file"
-            onClick={() => {
-              if (!confirm(`Delete ${file.filename}?`)) return
-              api.deleteAttachment(file.id).then(onChanged).catch(onError)
-            }}
-          >
-            ×
-          </button>
+          {/* Downloading stays open to anyone who can see the node. Deleting
+              is admin-only: re-uploading the same filename makes a new version,
+              so a member who picked the wrong file has a fix that destroys
+              nothing. */}
+          {isAdmin && (
+            <button
+              type="button"
+              className="btn btn-sm btn-danger"
+              title="Delete this file"
+              onClick={() => {
+                if (!confirm(`Delete ${file.filename}?`)) return
+                api.deleteAttachment(file.id).then(onChanged).catch(onError)
+              }}
+            >
+              ×
+            </button>
+          )}
         </div>
       ))}
 
+      {!canEdit && node.attachments.length === 0 && (
+        <p className="tag-note">No files on this node.</p>
+      )}
+
+      {canEdit && (
+      <>
       <button
         type="button"
         className={`dropzone${over ? ' over' : ''}`}
@@ -413,6 +464,8 @@ function FileSection({
           e.target.value = ''
         }}
       />
+      </>
+      )}
     </div>
   )
 }

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
@@ -45,6 +46,8 @@ COOKIE_NAME = "pitbox_session"
 # Cloudflare sets this on the browser after a successful Access login. It holds
 # the same signed token as the Cf-Access-Jwt-Assertion header.
 ACCESS_COOKIE_NAME = "CF_Authorization"
+
+log = logging.getLogger(__name__)
 
 # scrypt cost. n=2**14 with r=8 needs 128*n*r = 16 MB and takes ~100 ms, which
 # is the usual interactive-login target: unnoticeable to a person, punishing to
@@ -178,12 +181,25 @@ def upsert_access_member(db: DbSession, email: str) -> Member:
     email = email.strip().lower()
     member = db.scalar(select(Member).where(func.lower(Member.email) == email))
     if member is None:
+        # The very first person to sign in on an empty database owns it. That is
+        # the only automatic promotion there is, and the condition is "no
+        # members at all", not "no admins" -- on a database that already has
+        # members, auto-promoting would hand the app to whichever teammate
+        # happened to open it next. Every later admin is made by an existing
+        # one in the Team panel, or by scripts/grant_admin.py to recover.
+        first_ever = (db.scalar(select(func.count()).select_from(Member)) or 0) == 0
         # Name it after the local part until they edit it -- "e.carter" beats
         # a blank row, and they can fix it in the app.
-        member = Member(name=email.split("@")[0].replace(".", " ").title(), email=email)
+        member = Member(
+            name=email.split("@")[0].replace(".", " ").title(),
+            email=email,
+            is_admin=first_ever,
+        )
         db.add(member)
         db.commit()
         db.refresh(member)
+        if first_ever:
+            log.warning("first sign-in: %s is now the admin of this instance", email)
     elif not member.is_active:
         # Deactivated locally but still allowed by the Access policy. Access is
         # the authority in this mode, so let them back in.
@@ -282,6 +298,15 @@ def _local_dev_member(db: DbSession) -> Member:
         db.add(member)
         db.commit()
         db.refresh(member)
+    elif not member.is_admin:
+        # Re-granted rather than assumed. This row can lose the flag -- it
+        # predates the admin column, or somebody demoted it in the Team panel
+        # while running against a shared database. In this mode there is no
+        # authentication to undermine: everyone IS this member, so a non-admin
+        # local user just means the offline laptop can no longer edit its own
+        # parts list, which is never what anyone wanted.
+        member.is_admin = True
+        db.commit()
     return member
 
 
@@ -302,16 +327,131 @@ def require_member(member: Member | None = Depends(current_member_optional)) -> 
     raise HTTPException(401, "Not signed in.")
 
 
-def require_admin(member: Member = Depends(require_member)) -> Member:
-    """Roster management.
+# Methods that only read.
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
-    Only meaningful in password mode. Under Cloudflare Access the gate is the
-    Access policy itself -- everyone who got this far was allowed in by it, and
-    there is no admin flag to grant because there are no accounts to manage.
-    Enforcing it here would just lock everyone out of the roster screen.
+# Writes any signed-in member may make, as (method, route template) pairs.
+# Everything else that changes data needs an admin.
+#
+# The line drawn here is EDIT versus ADD/DELETE. A member working on their own
+# subsystem needs to mark a part ordered, set its cost, assign it, tag it and
+# attach a datasheet -- that is the daily job, and making a lead do it would
+# make the app worse than the spreadsheet it replaced. What they cannot do is
+# change the shape of the tree: create nodes, delete them, duplicate a branch,
+# or touch a whole project. Those are the actions that lose work.
+#
+# An allowlist rather than a denylist, so this stays deny-by-default: a route
+# added in two years is admin-only until somebody deliberately adds it here.
+# Route templates, not URLs -- validate_member_writable() below refuses to let
+# the app start if any of these stops matching a real route, so renaming an
+# endpoint fails loudly instead of quietly re-locking it.
+MEMBER_WRITABLE: frozenset[tuple[str, str]] = frozenset({
+    # Edit a part in place: name, status, assignee, cost, vendor, material...
+    ("PATCH", "/api/nodes/{node_id}"),
+    # Re-parent and reorder. Neither adds nor deletes anything -- a misplaced
+    # branch is fixed by dragging it back -- so it sits on the members' side.
+    ("POST", "/api/nodes/{node_id}/move"),
+    ("POST", "/api/nodes/reorder"),
+    # Apply and un-apply an existing tag. This edits a node's metadata; it does
+    # not create or destroy the tag itself, which stays admin-curated because
+    # the vocabulary is shared across every project and every season.
+    ("POST", "/api/nodes/{node_id}/tags"),
+    ("DELETE", "/api/nodes/{node_id}/tags/{tag_id}"),
+    # Upload a drawing or datasheet. Deleting one is NOT here: re-uploading the
+    # same filename makes a new version, so a mistake is fixable without a
+    # destructive operation.
+    ("POST", "/api/attachments"),
+})
+
+# Used by both guards below, because a member hitting either one has the same
+# problem and needs the same answer. It says what they CAN do rather than only
+# what they cannot -- the person reading it is on the team, not an attacker.
+NOT_ADMIN_MESSAGE = (
+    "Adding, deleting and managing trees is for team leads. You can still edit "
+    "any part that already exists. Ask an admin to make this change, or to make "
+    "you an admin themselves (the Team button in the top bar)."
+)
+
+
+def validate_member_writable(routers) -> None:
+    """Fail at import if MEMBER_WRITABLE names a route that no longer exists.
+
+    Without this, renaming an endpoint silently promotes it to admin-only:
+    the allowlist entry stops matching, the guard falls through to the admin
+    check, and nobody notices until a member reports that something they used
+    every day started refusing them. Deny-by-default is the right failure
+    direction, but it should still be loud.
     """
-    if settings.auth_mode != "password":
-        return member
+    known = {
+        (method, route.path)
+        for router in routers
+        for route in router.routes
+        for method in getattr(route, "methods", ())
+    }
+    missing = MEMBER_WRITABLE - known
+    if missing:
+        listed = ", ".join(f"{m} {p}" for m, p in sorted(missing))
+        raise RuntimeError(
+            "security.MEMBER_WRITABLE refers to routes that do not exist: "
+            f"{listed}. A route was renamed or removed -- update the allowlist."
+        )
+
+
+def count_admins(db: DbSession) -> int:
+    """How many people can still administer this instance.
+
+    Inactive members do not count: a deactivated admin cannot sign in, so
+    leaving them as the only admin is the same as having none.
+    """
+    return db.scalar(
+        select(func.count()).select_from(Member).where(
+            Member.is_admin.is_(True), Member.is_active.is_(True)
+        )
+    ) or 0
+
+
+def require_admin(member: Member = Depends(require_member)) -> Member:
+    """Admin-only actions: roster management and promoting other admins.
+
+    Enforced in every auth mode. It used to be a no-op outside password mode on
+    the reasoning that the Cloudflare Access policy was the only gate that
+    mattered -- true when the policy named individual people, and wrong as soon
+    as it says "anyone with a school email address". Then everyone who can log
+    in is inside the policy, and the difference between reading the tree and
+    deleting a subsystem has to be drawn somewhere else. Here.
+
+    In auth_mode=none the local dev member is created with is_admin=True, so
+    working offline is unaffected.
+    """
     if not member.is_admin:
-        raise HTTPException(403, "That action needs an admin account.")
+        raise HTTPException(403, NOT_ADMIN_MESSAGE)
     return member
+
+
+def require_write_access(
+    request: Request, member: Member = Depends(require_member)
+) -> Member:
+    """Three tiers: everyone reads, members edit, admins restructure.
+
+    Applied once in main.py to whole routers rather than to each endpoint, so
+    a route somebody adds in two years is admin-only the moment it exists,
+    without anyone remembering to guard it. Getting that wrong fails open, and
+    the failure is silent -- hence the allowlist above rather than a list of
+    things to block.
+
+    Reads are waved through by method. Everything else has to be either an
+    admin or an explicitly listed member-writable route.
+    """
+    if request.method in SAFE_METHODS:
+        return member
+    if member.is_admin:
+        return member
+
+    # scope["route"] is the matched APIRoute, so this is the route TEMPLATE
+    # ("/api/nodes/{node_id}"), not the requested URL. Comparing templates
+    # means the allowlist cannot be fooled by a path that merely looks similar.
+    route = request.scope.get("route")
+    if (request.method, getattr(route, "path", "")) in MEMBER_WRITABLE:
+        return member
+
+    raise HTTPException(403, NOT_ADMIN_MESSAGE)

@@ -996,3 +996,338 @@ def test_allowed_hosts_parsing(raw, expected):
         assert settings.allowed_host_list == expected
     finally:
         settings.allowed_hosts = previous
+
+
+# --- the write allowlist ------------------------------------------------------
+# The Access policy is a whole email domain, so "signed in" no longer means
+# "trusted to change things". These check the line between the two.
+
+def test_a_signed_in_non_admin_can_read_everything(anon, project):
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("reader@school.edu")}
+        assert anon.get("/api/projects", headers=h).status_code == 200
+        assert anon.get(f"/api/projects/{project['id']}/tree", headers=h).status_code == 200
+        assert anon.get("/api/tags", headers=h).status_code == 200
+        assert anon.get("/api/members", headers=h).status_code == 200
+
+
+def test_a_member_can_edit_an_existing_part(client, anon, project):
+    """The line is EDIT versus ADD/DELETE. Someone working on their subsystem has
+    to be able to mark a part ordered and set its cost without waiting on a lead;
+    that is the daily job, and needing an admin for it would make this worse than
+    the spreadsheet it replaced."""
+    root = _tree(client, project["id"])["nodes"][0]
+    part = _add(client, project["id"], root["id"], "Editable Part")
+    tag_id = client.get("/api/tags").json()[0]["id"]
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("member@school.edu")}
+
+        res = anon.patch(f"/api/nodes/{part['id']}", headers=h, json={
+            "name": "Renamed by a member", "status": "ordered",
+            "cost_cents": 4250, "vendor": "McMaster",
+        })
+        assert res.status_code == 200, res.text
+        assert res.json()["name"] == "Renamed by a member"
+        assert res.json()["status"] == "ordered"
+
+        # Re-parenting and reordering: neither adds nor deletes, and a branch
+        # dropped in the wrong place is fixed by dragging it back.
+        assert anon.post(f"/api/nodes/{part['id']}/move", headers=h,
+                         json={"new_parent_id": root["id"]}).status_code == 200
+        assert anon.post("/api/nodes/reorder", headers=h, json={
+            "project_id": project["id"], "parent_id": root["id"],
+            "ordered_ids": [part["id"]]}).status_code == 204
+
+        # Applying an existing tag is editing the part, not editing the tag.
+        assert anon.post(f"/api/nodes/{part['id']}/tags", headers=h,
+                         json={"tag_id": tag_id, "cascade": False}).status_code == 201
+        assert anon.delete(f"/api/nodes/{part['id']}/tags/{tag_id}",
+                           headers=h).status_code == 204
+
+        # Attaching a drawing or datasheet is part of doing the work.
+        assert anon.post("/api/attachments", headers=h,
+                         files={"file": ("spec.txt", b"hello")},
+                         data={"node_id": str(part["id"])}).status_code == 201
+
+
+def test_a_member_cannot_add_delete_or_restructure(anon, client, project):
+    """The whole point: a school-wide login must not be able to wipe a subsystem."""
+    root = _tree(client, project["id"])["nodes"][0]
+    doomed = _add(client, project["id"], root["id"], "Not Yours To Delete")
+    uploaded = client.post("/api/attachments", files={"file": ("x.txt", b"x")},
+                           data={"node_id": str(doomed["id"])}).json()
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("vandal@school.edu")}
+
+        # adding
+        assert anon.post("/api/nodes", headers=h, json={
+            "project_id": project["id"], "parent_id": root["id"], "name": "Sneaky part",
+        }).status_code == 403
+        assert anon.post(f"/api/nodes/{root['id']}/duplicate", headers=h,
+                         json={}).status_code == 403
+        # deleting
+        assert anon.delete(f"/api/nodes/{doomed['id']}", headers=h).status_code == 403
+        assert anon.delete(f"/api/attachments/{uploaded['id']}", headers=h).status_code == 403
+        # whole trees
+        assert anon.post("/api/projects", headers=h, json={
+            "name": "Theirs", "template": "blank"}).status_code == 403
+        assert anon.post("/api/projects/clone", headers=h, json={
+            "name": "Copy", "source_project_id": project["id"]}).status_code == 403
+        assert anon.patch(f"/api/projects/{project['id']}", headers=h,
+                          json={"name": "Renamed tree"}).status_code == 403
+        assert anon.delete(f"/api/projects/{project['id']}", headers=h).status_code == 403
+        # the shared tag vocabulary, which spans every project and season
+        assert anon.post("/api/tags", headers=h, json={"name": "Nope"}).status_code == 403
+        assert anon.patch("/api/tags/1", headers=h, json={"name": "Nope"}).status_code == 403
+        assert anon.delete("/api/tags/1", headers=h).status_code == 403
+
+        # and nothing actually went
+        after = anon.get(f"/api/projects/{project['id']}/tree", headers=h).json()
+        assert doomed["id"] in {n["id"] for n in after["nodes"]}
+
+
+def test_the_allowlist_matches_the_routes_that_exist(anon):
+    """A renamed route must not silently turn an everyday member action into an
+    admin-only one. main.py runs this at import; here it is again as a test, so
+    the failure names the offending entry instead of a 403 nobody can explain."""
+    from app.main import PROTECTED
+    from app.security import validate_member_writable
+
+    validate_member_writable(PROTECTED)  # raises RuntimeError if it drifts
+
+
+def test_the_refusal_explains_what_to_do(anon, project):
+    with cloudflare_mode():
+        res = anon.delete(f"/api/projects/{project['id']}",
+                          headers={JWT_HEADER: make_token("polite@school.edu")})
+        assert res.status_code == 403
+        detail = res.json()["detail"]
+        assert "team lead" in detail and "admin" in detail
+
+
+def test_a_new_access_member_is_not_an_admin(anon):
+    """No auto-promotion on a database that already has people in it."""
+    with cloudflare_mode():
+        body = anon.get("/api/auth/me",
+                        headers={JWT_HEADER: make_token("nobody@school.edu")}).json()
+        assert body["is_admin"] is False
+
+
+def test_the_first_member_on_an_empty_database_becomes_the_admin():
+    """Somebody has to be able to start. On a fresh install it is whoever signs
+    in first; after that, admins are only ever made by other admins."""
+    import sqlalchemy
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Base as ModelBase
+    from app.security import upsert_access_member
+
+    engine = sqlalchemy.create_engine("sqlite://")  # in-memory, its own world
+    ModelBase.metadata.create_all(engine)
+    Fresh = sessionmaker(bind=engine)
+
+    with Fresh() as db:
+        first = upsert_access_member(db, "founder@school.edu")
+        assert first.is_admin is True
+        second = upsert_access_member(db, "everyone-else@school.edu")
+        assert second.is_admin is False
+        # ...and coming back later does not re-run the bootstrap
+        assert upsert_access_member(db, "everyone-else@school.edu").is_admin is False
+
+
+def test_a_non_admin_cannot_promote_themselves(anon):
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("climber@school.edu")}
+        me = anon.get("/api/auth/me", headers=h).json()
+        assert anon.patch(f"/api/members/{me['id']}/admin", headers=h,
+                          json={"is_admin": True}).status_code == 403
+        assert anon.get("/api/auth/me", headers=h).json()["is_admin"] is False
+
+
+def test_the_general_member_edit_cannot_grant_admin(client):
+    """is_admin is not a field on MemberIn, so it cannot ride along on a roster
+    edit -- Pydantic drops the unknown key rather than applying it."""
+    made = client.post("/api/members", json={
+        "name": "Ordinary", "email": "ordinary@example.edu"}).json()
+    assert made["is_admin"] is False
+    res = client.patch(f"/api/members/{made['id']}",
+                       json={"name": "Ordinary", "is_admin": True})
+    assert res.status_code == 200
+    assert res.json()["is_admin"] is False
+
+
+def test_an_admin_can_promote_and_demote(client):
+    made = client.post("/api/members", json={
+        "name": "Next Lead", "email": "next-lead@example.edu"}).json()
+
+    res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": True})
+    assert res.status_code == 200, res.text
+    assert res.json()["is_admin"] is True
+
+    res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": False})
+    assert res.status_code == 200
+    assert res.json()["is_admin"] is False
+
+
+def test_a_promoted_member_can_then_write(anon, project):
+    """The promotion has to take effect on the very next request."""
+    from app.database import SessionLocal
+    from app.models import Member
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("promoted@school.edu")}
+        me = anon.get("/api/auth/me", headers=h).json()
+        root = anon.get(f"/api/projects/{project['id']}/tree", headers=h).json()["nodes"][0]
+        assert anon.post("/api/nodes", headers=h, json={
+            "project_id": project["id"], "parent_id": root["id"], "name": "Before",
+        }).status_code == 403
+
+    with SessionLocal() as db:
+        db.get(Member, me["id"]).is_admin = True
+        db.commit()
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("promoted@school.edu")}
+        assert anon.post("/api/nodes", headers=h, json={
+            "project_id": project["id"], "parent_id": root["id"], "name": "After",
+        }).status_code == 201
+
+
+def test_the_last_admin_cannot_be_demoted(client):
+    """Otherwise the instance becomes permanently read-only, fixable only from a
+    shell -- the dependency the Team panel exists to remove."""
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import Member
+
+    me = client.get("/api/auth/me").json()
+    assert me["is_admin"] is True
+
+    # Make sure this really is the last one, whatever earlier tests left behind,
+    # and put them back afterwards -- the module shares one database, and
+    # silently demoting the auth_mode=none local user here made a later test
+    # fail somewhere else entirely.
+    with SessionLocal() as db:
+        stood_down = [m.id for m in db.scalars(select(Member).where(
+            Member.is_admin.is_(True), Member.id != me["id"]
+        ))]
+        for member_id in stood_down:
+            db.get(Member, member_id).is_admin = False
+        db.commit()
+
+    try:
+        res = client.patch(f"/api/members/{me['id']}/admin", json={"is_admin": False})
+        assert res.status_code == 400
+        assert "last admin" in res.json()["detail"]
+        assert client.get("/api/auth/me").json()["is_admin"] is True
+    finally:
+        with SessionLocal() as db:
+            for member_id in stood_down:
+                db.get(Member, member_id).is_admin = True
+            db.commit()
+
+
+def test_an_admin_can_step_down_once_someone_else_can_take_over(client):
+    """A lead handing over should not need their successor to do it for them."""
+    from app.database import SessionLocal
+    from app.models import Member
+
+    me = client.get("/api/auth/me").json()
+    heir = client.post("/api/members", json={
+        "name": "Heir", "email": "heir@example.edu"}).json()
+    assert client.patch(f"/api/members/{heir['id']}/admin",
+                        json={"is_admin": True}).status_code == 200
+
+    assert client.patch(f"/api/members/{me['id']}/admin",
+                        json={"is_admin": False}).status_code == 200
+
+    # Put the fixture's admin back for the tests that follow.
+    with SessionLocal() as db:
+        db.get(Member, me["id"]).is_admin = True
+        db.get(Member, heir["id"]).is_admin = False
+        db.commit()
+
+
+def test_a_deactivated_member_cannot_be_made_admin(client):
+    made = client.post("/api/members", json={
+        "name": "Gone", "email": "gone@example.edu", "is_active": False}).json()
+    res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": True})
+    assert res.status_code == 400
+    assert "deactivated" in res.json()["detail"]
+
+
+def test_promoting_someone_who_already_is_one_is_not_an_error(client):
+    made = client.post("/api/members", json={
+        "name": "Twice", "email": "twice@example.edu"}).json()
+    client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": True})
+    res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": True})
+    assert res.status_code == 200 and res.json()["is_admin"] is True
+    client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": False})
+
+
+def test_a_non_admin_can_still_name_themselves(anon):
+    """PATCH /api/auth/me is a write, but it is about your OWN row and it is the
+    fix for showing up as a school ID. Locking it to admins would make every new
+    teammate wait on a lead just to be identifiable."""
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("w9999999@school.edu")}
+        anon.get("/api/auth/me", headers=h)
+        res = anon.patch("/api/auth/me", headers=h,
+                         json={"name": "Real Name", "subteam": "Suspension"})
+        assert res.status_code == 200, res.text
+        assert res.json()["name"] == "Real Name"
+        assert res.json()["is_admin"] is False
+
+
+def test_none_mode_still_lets_you_do_everything(anon, project):
+    """auth_mode=none is the offline laptop case. Its local user is an admin, so
+    adding the write lock must not have broken working with no login at all."""
+    with auth_mode("none"):
+        root = anon.get(f"/api/projects/{project['id']}/tree").json()["nodes"][0]
+        res = anon.post("/api/nodes", json={
+            "project_id": project["id"], "parent_id": root["id"], "name": "Local part",
+        })
+        assert res.status_code == 201, res.text
+
+
+def test_deactivating_someone_takes_their_admin_with_it(client):
+    """Under Cloudflare Access a deactivated member is reactivated on their next
+    sign-in, so a surviving admin flag would quietly hand back the access a lead
+    just removed."""
+    made = client.post("/api/members", json={
+        "name": "Graduating Lead", "email": "graduating@example.edu"}).json()
+    assert client.patch(f"/api/members/{made['id']}/admin",
+                        json={"is_admin": True}).status_code == 200
+
+    assert client.delete(f"/api/members/{made['id']}").status_code == 204
+
+    after = next(m for m in client.get("/api/members?include_inactive=true").json()
+                 if m["id"] == made["id"])
+    assert after["is_active"] is False
+    assert after["is_admin"] is False
+
+
+def test_a_deactivated_admin_can_still_be_demoted(client):
+    """The last-admin guard counts admins who can actually sign in. A
+    deactivated one is not among them, so refusing to clear their flag would
+    strand it on the account permanently."""
+    from app.database import SessionLocal
+    from app.models import Member
+
+    made = client.post("/api/members", json={
+        "name": "Stranded", "email": "stranded@example.edu"}).json()
+
+    # Build the state by hand: inactive AND admin, which the API no longer
+    # produces on its own but old databases still contain.
+    with SessionLocal() as db:
+        row = db.get(Member, made["id"])
+        row.is_admin = True
+        row.is_active = False
+        db.commit()
+
+    res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": False})
+    assert res.status_code == 200, res.text
+    assert res.json()["is_admin"] is False
