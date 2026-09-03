@@ -1,13 +1,13 @@
 <#
-  Registers the Pit Box scheduled tasks.
+  Registers the CarHub scheduled tasks.
 
       .\deploy\install-tasks.ps1              # both (needs an elevated shell)
       .\deploy\install-tasks.ps1 -BackupOnly  # just the weekly backup, no admin
       .\deploy\install-tasks.ps1 -Host 0.0.0.0 -Port 8000
 
   Two tasks:
-    "Pit Box Backup"  weekly, runs as you, no admin needed
-    "Pit Box Server"  at boot, runs as SYSTEM so it survives a reboot with
+    "CarHub Backup"  weekly, runs as you, no admin needed
+    "CarHub Server"  at boot, runs as SYSTEM so it survives a reboot with
                       nobody logged in -- which is why it needs admin
 
   The XML files next to this script are the source of truth; this only fills in
@@ -77,7 +77,7 @@ $tokens = @{
 # --- 1. weekly backup (no admin required) ------------------------------------
 Write-Host ""
 Write-Host "Installing weekly backup..." -ForegroundColor Cyan
-Install-FromXml -XmlFile "PitBox-Backup.xml" -TaskName "Pit Box Backup" -Tokens $tokens
+Install-FromXml -XmlFile "CarHub-Backup.xml" -TaskName "CarHub Backup" -Tokens $tokens
 
 # --- 2. server at boot (admin required) --------------------------------------
 if (-not $BackupOnly) {
@@ -96,7 +96,7 @@ if (-not $BackupOnly) {
         [Environment]::SetEnvironmentVariable("PITBOX_PORT", "$Port", "Machine")
         Write-Host "  PITBOX_HOST=$BindHost  PITBOX_PORT=$Port (machine-wide)" -ForegroundColor DarkGray
 
-        Install-FromXml -XmlFile "PitBox-App.xml" -TaskName "Pit Box Server" -Tokens $tokens
+        Install-FromXml -XmlFile "CarHub-App.xml" -TaskName "CarHub Server" -Tokens $tokens
 
         if ($BindHost -eq "127.0.0.1") {
             Write-Host "  bound to localhost only - correct for Cloudflare Tunnel." -ForegroundColor DarkGray
@@ -107,8 +107,8 @@ if (-not $BackupOnly) {
 
 Write-Host ""
 Write-Host "Done. Useful commands:" -ForegroundColor Green
-Write-Host "  Start-ScheduledTask -TaskName 'Pit Box Backup'      # test the backup now"
-Write-Host "  Start-ScheduledTask -TaskName 'Pit Box Server'      # start without rebooting"
-Write-Host "  Get-ScheduledTaskInfo -TaskName 'Pit Box Server'    # last run + result"
+Write-Host "  Start-ScheduledTask -TaskName 'CarHub Backup'      # test the backup now"
+Write-Host "  Start-ScheduledTask -TaskName 'CarHub Server'      # start without rebooting"
+Write-Host "  Get-ScheduledTaskInfo -TaskName 'CarHub Server'    # last run + result"
 Write-Host "  Get-Content deploy\logs\pitbox.log -Tail 30 -Wait   # follow the log"
 Write-Host "  .\deploy\uninstall-tasks.ps1                        # remove both"

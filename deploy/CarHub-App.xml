@@ -1,8 +1,8 @@
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
     <Author>MESA ARC Racing</Author>
-    <Description>Starts the Pit Box server at boot and restarts it if it dies. Logs to deploy\logs\pitbox.log.</Description>
-    <URI>\Pit Box Server</URI>
+    <Description>Starts the CarHub server at boot and restarts it if it dies. Logs to deploy\logs\pitbox.log.</Description>
+    <URI>\CarHub Server</URI>
   </RegistrationInfo>
 
   <Triggers>

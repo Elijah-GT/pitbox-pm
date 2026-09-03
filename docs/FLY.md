@@ -1,4 +1,4 @@
-# Deploying Pit Box to Fly.io
+# Deploying CarHub to Fly.io
 
 For teams with no machine they can realistically leave switched on. Fly runs the
 container, a Fly volume holds the database and the uploaded files, and Cloudflare
@@ -173,7 +173,7 @@ fly logs
 
 You are looking for two lines: `Cloudflare Access enabled: issuer=... aud=...`
 and cloudflared registering a connection. Then open
-`https://pitbox.yourteam.org` — you should get a Cloudflare login, not Pit Box.
+`https://pitbox.yourteam.org` — you should get a Cloudflare login, not CarHub.
 
 If it crash-loops on `AccessConfigError`, one of the two `PITBOX_ACCESS_*`
 secrets is missing. That is deliberate: the app will not start in Cloudflare mode
@@ -197,7 +197,7 @@ request that a header-trusting deployment would answer with the whole parts list
 
 ## Moving existing data across
 
-Skip this if the Fly instance is the first place you have run Pit Box — the
+Skip this if the Fly instance is the first place you have run CarHub — the
 first deploy seeds a demo car and there is nothing to migrate.
 
 If you have been running locally and have real work in `pitbox.db`, move it

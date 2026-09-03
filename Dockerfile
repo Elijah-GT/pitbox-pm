@@ -1,4 +1,4 @@
-# Pit Box, built for Fly.io (or any container host).
+# CarHub, built for Fly.io (or any container host).
 #
 # Two stages: Node builds the React UI, then a slim Python image runs the API and
 # serves that build. Node does not ship in the final image -- it is a build tool,

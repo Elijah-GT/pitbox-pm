@@ -29,7 +29,7 @@ else
   fi
 fi
 
-echo "[entrypoint] starting Pit Box on ${HOST}:${PORT}"
+echo "[entrypoint] starting CarHub on ${HOST}:${PORT}"
 python -m uvicorn app.main:app --host "$HOST" --port "$PORT" --log-level info &
 pids+=("$!")
 

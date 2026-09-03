@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start Pit Box. First run creates the venv and installs dependencies.
+# Start CarHub. First run creates the venv and installs dependencies.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -15,5 +15,5 @@ fi
 # requires the two PITBOX_ACCESS_* values -- see docs/CLOUDFLARE.md.
 export PITBOX_AUTH_MODE=none
 
-echo "Pit Box running at http://127.0.0.1:8000"
+echo "CarHub running at http://127.0.0.1:8000"
 exec ./.venv/bin/python -m uvicorn app.main:app --reload --port 8000

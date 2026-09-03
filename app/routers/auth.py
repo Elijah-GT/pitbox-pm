@@ -148,7 +148,7 @@ LOGIN_HTML = r"""<!doctype html>
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Sign in — Pit Box</title>
+<title>Sign in — CarHub</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#128295;</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -189,7 +189,7 @@ LOGIN_HTML = r"""<!doctype html>
         <circle cx="16" cy="38" r="4" fill="currentColor"/>
         <circle cx="34" cy="38" r="4" fill="currentColor"/>
       </svg>
-      <span>Pit <em>Box</em></span>
+      <span>Car<em>Hub</em></span>
     </div>
     <p class="team">{{TEAM}}</p>
 

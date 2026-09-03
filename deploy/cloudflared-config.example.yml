@@ -1,4 +1,4 @@
-# Cloudflared tunnel config for Pit Box.
+# Cloudflared tunnel config for CarHub.
 #
 # Copy to  %USERPROFILE%\.cloudflared\config.yml  and edit the three marked
 # values. Full walkthrough in docs/CLOUDFLARE.md.

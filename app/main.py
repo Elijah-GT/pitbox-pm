@@ -1,4 +1,4 @@
-"""Pit Box -- part tracking and project management for a Baja SAE team.
+"""CarHub -- part tracking and project management for a Baja SAE team.
 
 Run it:
     pip install -r requirements.txt
@@ -83,7 +83,7 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(
-    title=f"Pit Box -- {settings.team_name}",
+    title=f"CarHub -- {settings.team_name}",
     description="Hierarchical part tracking for a Baja SAE vehicle.",
     version="0.1.0",
     lifespan=lifespan,

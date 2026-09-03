@@ -1,4 +1,4 @@
-"""Production entry point, run by the Pit Box scheduled task at boot.
+"""Production entry point, run by the CarHub scheduled task at boot.
 
 Task Scheduler gives a process no console and no way to redirect its output, so
 logging is configured here rather than left to the shell. Everything lands in
@@ -56,7 +56,7 @@ def main() -> int:
     host = os.environ.get("PITBOX_HOST", "127.0.0.1")
     port = int(os.environ.get("PITBOX_PORT", "8000"))
 
-    log.info("starting Pit Box from %s on %s:%s", PROJECT_DIR, host, port)
+    log.info("starting CarHub from %s on %s:%s", PROJECT_DIR, host, port)
 
     try:
         import uvicorn
@@ -74,10 +74,10 @@ def main() -> int:
         )
     except Exception:
         # Without this the task just exits with a code and no explanation.
-        log.exception("Pit Box stopped with an unhandled error")
+        log.exception("CarHub stopped with an unhandled error")
         return 1
 
-    log.info("Pit Box stopped cleanly")
+    log.info("CarHub stopped cleanly")
     return 0
 
 

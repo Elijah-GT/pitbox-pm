@@ -1,4 +1,4 @@
-# Start Pit Box. First run creates the venv and installs dependencies.
+# Start CarHub. First run creates the venv and installs dependencies.
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -14,5 +14,5 @@ if (-not (Test-Path ".venv")) {
 # requires the two PITBOX_ACCESS_* values -- see docs/CLOUDFLARE.md.
 $env:PITBOX_AUTH_MODE = "none"
 
-Write-Host "Pit Box running at http://127.0.0.1:8000" -ForegroundColor Green
+Write-Host "CarHub running at http://127.0.0.1:8000" -ForegroundColor Green
 .\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --port 8000

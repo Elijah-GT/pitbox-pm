@@ -36,7 +36,7 @@ export function TopBar({
           <circle cx="34" cy="38" r="4" fill="currentColor" />
         </svg>
         <span>
-          Pit <em>Box</em>
+          Car<em>Hub</em>
         </span>
       </div>
 

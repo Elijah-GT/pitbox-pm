@@ -1,4 +1,4 @@
-# Pit Box — Baja SAE part tracker
+# CarHub — Baja SAE part tracker
 # Python backend + Vite/React frontend on Windows.
 #
 # NOTE: git only treats # as a comment at the START of a line. Never put a

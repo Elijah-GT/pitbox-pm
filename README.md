@@ -1,4 +1,4 @@
-# Pit Box
+# CarHub
 
 Part tracking and project management for a Baja SAE team.
 
@@ -10,6 +10,12 @@ to just what you care about.
 Built for the way a student team actually works: a third of the roster leaves
 every year, nobody inherits a handover document, and whoever picks it up next
 should not have to maintain accounts or run scripts to keep it alive.
+
+> **A note on the name.** This was called Pit Box, and the internals still say
+> so: settings are `PITBOX_*`, the database is `pitbox.db`, and the session
+> cookie is `pitbox_session`. Only the name people see changed. Renaming the
+> settings would break every existing deployment on upgrade for no benefit a
+> user can see, so they stay as they are.
 
 ---
 

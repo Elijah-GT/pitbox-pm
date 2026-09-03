@@ -226,7 +226,7 @@ class AccessTokenVerifier:
             # `common_name` and no email, so there is nobody to file work under.
             if claims.get("common_name"):
                 raise InvalidAccessToken(
-                    "is a service token. Pit Box assigns work to people, so it "
+                    "is a service token. CarHub assigns work to people, so it "
                     "needs a token with an email claim."
                 )
             raise InvalidAccessToken("carries no email claim")

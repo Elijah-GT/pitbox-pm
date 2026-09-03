@@ -1,11 +1,11 @@
-# Running Pit Box behind Cloudflare Access
+# Running CarHub behind Cloudflare Access
 
 This is the deployment the app is built for. Cloudflare checks who you are;
-Pit Box trusts the answer. There are no passwords, no accounts to create, and
+CarHub trusts the answer. There are no passwords, no accounts to create, and
 nothing to hand over at the end of the year except the Cloudflare login.
 
 **How access works once this is set up:** a new member with a school email opens
-the URL, Cloudflare emails them a one-time code, and they are in. Pit Box sees
+the URL, Cloudflare emails them a one-time code, and they are in. CarHub sees
 their email, creates their member record on the spot, and they appear in the
 assignee list. Nobody runs a script. When they graduate and the school disables
 their email, they stop being able to get a code.
@@ -20,12 +20,12 @@ Cloudflare Access proves identity twice over, and the app relies on the half tha
 cannot be faked:
 
 * **`Cf-Access-Jwt-Assertion`** carries a token Cloudflare signed with a private
-  key only they hold. Pit Box verifies that signature against their published
+  key only they hold. CarHub verifies that signature against their published
   public keys, plus the audience (this application specifically), the issuer
   (your team) and the expiry. Forging one is not a matter of sending the right
   header — it means forging a signature.
 * **`Cf-Access-Authenticated-User-Email`** is a plain header. Anyone who can
-  reach the app can set it. **Pit Box ignores it entirely.**
+  reach the app can set it. **CarHub ignores it entirely.**
 
 The second point is the one worth dwelling on. Trusting the email header is a
 common shortcut — Cloudflare's own quickstarts show it — and it is safe only
@@ -49,7 +49,7 @@ a header.
 
 - A domain on Cloudflare. Around $10/yr at cost from Cloudflare Registrar; a
   subdomain like `pitbox.yourteam.org` is fine.
-- A machine that stays on, with Pit Box running. If you do not have one,
+- A machine that stays on, with CarHub running. If you do not have one,
   [FLY.md](FLY.md) runs the same setup on Fly.io instead — same Access
   application, same policy, no machine of your own.
 - A free Cloudflare Zero Trust plan — covers 50 users.
@@ -141,7 +141,7 @@ This is the part that actually gates access.
 
 | Field | Value |
 |---|---|
-| Application name | `Pit Box` |
+| Application name | `CarHub` |
 | Session duration | `1 month` — how long before members re-authenticate |
 | Subdomain | `pitbox` |
 | Domain | `yourteam.org` |
@@ -193,7 +193,7 @@ Your team domain is on **Settings → Custom Pages**, or in the URL of the login
 page: `yourteam.cloudflareaccess.com`.
 
 **8. Verify it actually blocks.** Open the URL in a private window. You should
-get a Cloudflare login prompt, *not* Pit Box. Try a personal email — it must be
+get a Cloudflare login prompt, *not* CarHub. Try a personal email — it must be
 refused. Only then share the link.
 
 ---

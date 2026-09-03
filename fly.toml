@@ -1,4 +1,4 @@
-# Fly.io configuration for Pit Box.
+# Fly.io configuration for CarHub.
 #
 # This file describes the RECOMMENDED deployment: no public port at all.
 # cloudflared runs inside the container, dials out to Cloudflare, and is the only
