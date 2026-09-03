@@ -244,9 +244,9 @@ def test_filter_returns_ancestors_so_the_tree_can_render(client, project):
     root = _tree(client, project["id"])["nodes"][0]
     lvl1 = _add(client, project["id"], root["id"], "Level 1")
     lvl2 = _add(client, project["id"], lvl1["id"], "Level 2")
-    target = _add(client, project["id"], lvl2["id"], "Deep Target", status="needs_rework")
+    target = _add(client, project["id"], lvl2["id"], "Deep Target", status="not_installed")
 
-    r = client.get(f"/api/projects/{project['id']}/filter", params={"status": ["needs_rework"]})
+    r = client.get(f"/api/projects/{project['id']}/filter", params={"status": ["not_installed"]})
     assert r.status_code == 200
     data = r.json()
 
@@ -1331,3 +1331,113 @@ def test_a_deactivated_admin_can_still_be_demoted(client):
     res = client.patch(f"/api/members/{made['id']}/admin", json={"is_admin": False})
     assert res.status_code == 200, res.text
     assert res.json()["is_admin"] is False
+
+
+# --- the status vocabulary ----------------------------------------------------
+
+def test_the_new_status_is_accepted_and_the_old_ones_are_not(client, project):
+    root = _tree(client, project["id"])["nodes"][0]
+    part = _add(client, project["id"], root["id"], "Status Test")
+
+    res = client.patch(f"/api/nodes/{part['id']}", json={"status": "not_installed"})
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "not_installed"
+
+    for gone in ("released", "needs_rework", "scrapped"):
+        assert client.patch(f"/api/nodes/{part['id']}",
+                            json={"status": gone}).status_code == 422, gone
+
+
+def test_a_node_on_a_retired_status_does_not_break_the_tree(client, project):
+    """The reason retire_dead_statuses() exists. status is validated on the way
+    OUT as well as in, so one row left on a removed value breaks the whole tree
+    endpoint, not just that node."""
+    from pydantic import ValidationError
+    from sqlalchemy import text as sql_text
+
+    from app.database import engine
+    from app.migrate import retire_dead_statuses
+
+    root = _tree(client, project["id"])["nodes"][0]
+    part = _add(client, project["id"], root["id"], "Legacy Part")
+
+    # Write the dead value straight to the database, the way a season-old
+    # instance would already have it. The API itself refuses to create one.
+    with engine.begin() as conn:
+        conn.execute(sql_text("UPDATE nodes SET status = 'scrapped' WHERE id = :i"),
+                     {"i": part["id"]})
+
+    try:
+        # Serializing the tree now fails on THIS node and takes the request with
+        # it. TestClient re-raises server exceptions rather than returning 500.
+        with pytest.raises(ValidationError):
+            client.get(f"/api/projects/{project['id']}/tree")
+
+        assert retire_dead_statuses(engine) == {"scrapped": 1}
+
+        assert client.get(f"/api/projects/{project['id']}/tree").status_code == 200
+        after = client.get(f"/api/nodes/{part['id']}").json()
+        assert after["status"] == "concept"
+        # The old value is kept, not binned -- somebody entered it on purpose.
+        assert after["extra"]["former_status"] == "scrapped"
+    finally:
+        # The database is shared across this module; never leave a poisoned row
+        # behind for whatever runs next.
+        retire_dead_statuses(engine)
+
+
+def test_retiring_statuses_is_idempotent_and_keeps_the_first_value(client, project):
+    """Running it twice must not overwrite former_status with a later hop."""
+    from sqlalchemy import text as sql_text
+
+    from app.database import engine
+    from app.migrate import retire_dead_statuses
+
+    root = _tree(client, project["id"])["nodes"][0]
+    part = _add(client, project["id"], root["id"], "Twice Migrated")
+
+    with engine.begin() as conn:
+        conn.execute(sql_text("UPDATE nodes SET status = 'released' WHERE id = :i"),
+                     {"i": part["id"]})
+
+    try:
+        assert retire_dead_statuses(engine) == {"released": 1}
+        assert retire_dead_statuses(engine) == {}          # nothing left to do
+
+        after = client.get(f"/api/nodes/{part['id']}").json()
+        assert after["status"] == "in_review"
+        assert after["extra"]["former_status"] == "released"
+    finally:
+        retire_dead_statuses(engine)
+
+
+def test_every_retired_status_maps_to_a_live_one():
+    """A typo in RETIRED_STATUSES would move nodes onto a value that is still
+    invalid, which is the exact breakage this is supposed to prevent."""
+    from app.models import RETIRED_STATUSES, STATUSES
+
+    for old, new in RETIRED_STATUSES.items():
+        assert old not in STATUSES, f"{old} is still a live status"
+        assert new in STATUSES, f"{old} maps to {new}, which does not exist"
+
+
+def test_the_two_frontends_agree_with_the_backend_on_statuses():
+    """Three copies of this list exist: models.py, the React app, and static/.
+    They drift silently -- a status the API accepts but the UI cannot label
+    renders as a blank pip with no dropdown entry."""
+    import re
+
+    from app.models import STATUSES
+
+    root = Path(__file__).resolve().parent.parent
+
+    ts = (root / "frontend" / "src" / "lib" / "format.ts").read_text(encoding="utf-8")
+    block = ts.split("STATUS_LABELS: Record<Status, string> = {")[1].split("}")[0]
+    react = re.findall(r"^\s*(\w+):", block, re.M)
+
+    js = (root / "static" / "js" / "treeview.js").read_text(encoding="utf-8")
+    block = js.split("export const STATUS_LABELS = {")[1].split("}")[0]
+    vanilla = re.findall(r"^\s*(\w+):", block, re.M)
+
+    assert react == list(STATUSES), f"React: {react} != {list(STATUSES)}"
+    assert vanilla == list(STATUSES), f"static/: {vanilla} != {list(STATUSES)}"

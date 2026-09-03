@@ -1,5 +1,6 @@
-// Mirrors app/schemas.py. When you change a Pydantic model, change it here too —
-// /docs shows the live shape if the two ever drift.
+// Mirrors app/schemas.py. When you change a Pydantic model, change it here too.
+// The status list is checked against the backend by a test, since it lives in
+// three places (schemas.py, here, and static/js/treeview.js).
 
 export type NodeType = 'vehicle' | 'subsystem' | 'assembly' | 'part'
 
@@ -7,13 +8,11 @@ export type Status =
   | 'concept'
   | 'design'
   | 'in_review'
-  | 'released'
   | 'ordered'
   | 'in_fabrication'
   | 'assembled'
+  | 'not_installed'
   | 'installed'
-  | 'needs_rework'
-  | 'scrapped'
 
 export type Sourcing = 'make' | 'buy' | 'na'
 

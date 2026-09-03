@@ -13,8 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 NodeType = Literal["vehicle", "subsystem", "assembly", "part"]
 Status = Literal[
-    "concept", "design", "in_review", "released", "ordered",
-    "in_fabrication", "assembled", "installed", "needs_rework", "scrapped",
+    "concept", "design", "in_review", "ordered",
+    "in_fabrication", "assembled", "not_installed", "installed",
 ]
 Sourcing = Literal["make", "buy", "na"]
 AttachmentKind = Literal[

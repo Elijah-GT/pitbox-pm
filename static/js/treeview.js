@@ -13,26 +13,26 @@ export const STATUS_COLORS = {
   concept: '#767d8c',
   design: '#3b82f6',
   in_review: '#8b5cf6',
-  released: '#22c55e',
   ordered: '#14b8a6',
   in_fabrication: '#f59e0b',
   assembled: '#84cc16',
+  // Rose rather than another yellow: at 8px the amber of In Fabrication is
+  // indistinguishable from one. Keep in step with frontend/src/lib/format.ts.
+  not_installed: '#fb7185',
   installed: '#22c55e',
-  needs_rework: '#ef4444',
-  scrapped: '#57606f',
 };
 
+// Declaration order is the order of the status dropdown (main.js builds it from
+// Object.entries), so this reads as the life of a part.
 export const STATUS_LABELS = {
   concept: 'Concept',
   design: 'Design',
   in_review: 'In Review',
-  released: 'Released',
   ordered: 'Ordered',
   in_fabrication: 'In Fabrication',
   assembled: 'Assembled',
+  not_installed: 'Not Installed',
   installed: 'Installed',
-  needs_rework: 'Needs Rework',
-  scrapped: 'Scrapped',
 };
 
 const el = (tag, className, text) => {

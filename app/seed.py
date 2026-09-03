@@ -224,7 +224,7 @@ def seed_demo(db: Session) -> Project | None:
         tree.create_node(
             db, project_id=project.id, parent=pedals,
             name="Brake Pedal Weldment", node_type="part", part_number="BRK-PDL-001",
-            status="needs_rework", sourcing="make", material="4130 Chromoly",
+            status="design", sourcing="make", material="4130 Chromoly",
             mass_g=410.0, quantity=1, assignee_id=by_name["Casey Lam"].id,
         )
 

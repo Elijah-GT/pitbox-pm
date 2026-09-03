@@ -22,7 +22,7 @@ from fastapi.responses import RedirectResponse
 from .access_jwt import get_verifier
 from .config import BASE_DIR, settings
 from .database import SessionLocal, engine
-from .migrate import run_migrations
+from .migrate import retire_dead_statuses, run_migrations
 from .models import Base, Member
 from .routers import attachments, auth, members, nodes, projects, tags
 from .security import (
@@ -47,6 +47,10 @@ async def lifespan(_app: FastAPI):
     # create_all builds missing tables but never alters existing ones, so adding
     # the login columns needs this for anyone with a database already.
     run_migrations(engine)
+    # Statuses removed from the vocabulary would otherwise 500 the tree endpoint
+    # for any project still holding one, since status is validated on the way
+    # out as well as in. Idempotent; a no-op on a database that has none.
+    retire_dead_statuses(engine)
     log = logging.getLogger("pitbox")
     if settings.auth_mode == "none":
         log.warning(

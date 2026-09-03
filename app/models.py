@@ -58,14 +58,27 @@ STATUSES = (
     "concept",
     "design",
     "in_review",
-    "released",
     "ordered",
     "in_fabrication",
     "assembled",
+    "not_installed",
     "installed",
-    "needs_rework",
-    "scrapped",
 )
+
+# Statuses that used to exist, and what a node carrying one becomes. Removing a
+# value from STATUSES is not enough on its own: the API validates status against
+# a Literal on the way OUT as well as in, so a single surviving row would turn
+# the whole tree endpoint into a 500. app/migrate.py drains these on boot and
+# keeps the old value in Node.extra["former_status"], because "this was
+# scrapped" is real information and a vocabulary change should not silently bin
+# it. Every target is a status that understates progress rather than
+# overstating it -- a part that looks less finished than it is gets noticed and
+# corrected; one that looks more finished does not.
+RETIRED_STATUSES = {
+    "released": "in_review",
+    "needs_rework": "design",
+    "scrapped": "concept",
+}
 
 SOURCING = ("make", "buy", "na")
 

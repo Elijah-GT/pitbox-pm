@@ -1,29 +1,32 @@
 import type { Status } from '../api/types'
 
+// Declaration order is the order of the dropdown and the filter, so this
+// reads as the life of a part: drawn, checked, bought or made, then fitted.
+// "Not installed" sits immediately before "Installed" because that is what it
+// means here -- the part exists and is ready, it is just not on the car yet.
 export const STATUS_LABELS: Record<Status, string> = {
   concept: 'Concept',
   design: 'Design',
   in_review: 'In Review',
-  released: 'Released',
   ordered: 'Ordered',
   in_fabrication: 'In Fabrication',
   assembled: 'Assembled',
+  not_installed: 'Not Installed',
   installed: 'Installed',
-  needs_rework: 'Needs Rework',
-  scrapped: 'Scrapped',
 }
 
 export const STATUS_COLORS: Record<Status, string> = {
   concept: '#767d8c',
   design: '#3b82f6',
   in_review: '#8b5cf6',
-  released: '#22c55e',
   ordered: '#14b8a6',
   in_fabrication: '#f59e0b',
   assembled: '#84cc16',
+  // Rose, not another yellow: these are 8px pips, and the amber already used
+  // by In Fabrication is too close to read apart at that size. It also says
+  // "outstanding" without saying "broken", which red would.
+  not_installed: '#fb7185',
   installed: '#22c55e',
-  needs_rework: '#ef4444',
-  scrapped: '#57606f',
 }
 
 export const STATUS_ORDER = Object.keys(STATUS_LABELS) as Status[]

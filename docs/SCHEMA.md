@@ -185,7 +185,7 @@ SELECT * FROM nodes WHERE project_id=1 AND path LIKE '/1/7/%' ORDER BY depth, po
 -- Direct children only
 SELECT * FROM nodes WHERE parent_id=7 ORDER BY position;
 
--- Everything not yet released, deepest first
+-- Everything still on the drawing board, deepest first
 SELECT * FROM nodes WHERE project_id=1 AND status IN ('concept','design') ORDER BY depth DESC;
 
 -- Directly tagged (inherited tags are resolved in app code, see tree.effective_tags)
