@@ -24,7 +24,7 @@ from .config import BASE_DIR, settings
 from .database import SessionLocal, engine
 from .migrate import retire_dead_statuses, run_migrations
 from .models import Base, Member
-from .routers import attachments, auth, members, nodes, projects, tags
+from .routers import attachments, auth, members, milestones, nodes, projects, tags
 from .security import (
     count_admins,
     current_member_optional,
@@ -126,7 +126,8 @@ app.include_router(auth.router)
 # being signed in. It then splits writes three ways: reads for anyone signed
 # in, editing an existing part for any member, and adding/deleting/restructuring
 # for admins -- see security.MEMBER_WRITABLE for the exact line and why.
-PROTECTED = [projects.router, nodes.router, tags.router, attachments.router, members.router]
+PROTECTED = [projects.router, nodes.router, tags.router, attachments.router,
+             members.router, milestones.router]
 for _router in PROTECTED:
     app.include_router(_router, dependencies=[Depends(require_write_access)])
 

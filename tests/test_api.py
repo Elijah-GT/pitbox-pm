@@ -1441,3 +1441,125 @@ def test_the_two_frontends_agree_with_the_backend_on_statuses():
 
     assert react == list(STATUSES), f"React: {react} != {list(STATUSES)}"
     assert vanilla == list(STATUSES), f"static/: {vanilla} != {list(STATUSES)}"
+
+
+# --- the project timeline -----------------------------------------------------
+
+def _goal(client, project_id, title, due, **kw):
+    r = client.post("/api/milestones", json={
+        "project_id": project_id, "title": title, "due_date": due, **kw,
+    })
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_milestones_come_back_in_date_order(client, project):
+    _goal(client, project["id"], "Design review", "2026-04-23")
+    _goal(client, project["id"], "BOM due", "2026-03-06")
+    _goal(client, project["id"], "Roll cage doc package", "2026-02-12")
+
+    rows = client.get(f"/api/milestones?project_id={project['id']}").json()
+    assert [r["title"] for r in rows] == [
+        "Roll cage doc package", "BOM due", "Design review",
+    ]
+    assert all(r["done"] is False and r["done_at"] is None for r in rows)
+
+
+def test_ticking_a_goal_off_stamps_when(client, project):
+    made = _goal(client, project["id"], "Frame welded", "2026-01-15")
+
+    done = client.patch(f"/api/milestones/{made['id']}", json={"done": True})
+    assert done.status_code == 200, done.text
+    assert done.json()["done"] is True
+    assert done.json()["done_at"] is not None
+
+    # Un-ticking clears the stamp rather than leaving a date that claims it was
+    # finished once.
+    undone = client.patch(f"/api/milestones/{made['id']}", json={"done": False})
+    assert undone.json()["done"] is False
+    assert undone.json()["done_at"] is None
+
+
+def test_editing_other_fields_does_not_touch_the_done_stamp(client, project):
+    made = _goal(client, project["id"], "Seat mounted", "2026-02-01")
+    client.patch(f"/api/milestones/{made['id']}", json={"done": True})
+    stamped = client.get(f"/api/milestones?project_id={project['id']}").json()
+    was = next(r for r in stamped if r["id"] == made["id"])["done_at"]
+
+    client.patch(f"/api/milestones/{made['id']}", json={"title": "Seat mounted and padded"})
+    after = client.get(f"/api/milestones?project_id={project['id']}").json()
+    row = next(r for r in after if r["id"] == made["id"])
+    assert row["title"] == "Seat mounted and padded"
+    assert row["done_at"] == was
+
+
+def test_a_goal_cannot_point_at_a_part_in_another_tree(client, project):
+    """Otherwise the timeline offers a jump that lands you in a different
+    season with no explanation."""
+    other = client.post("/api/projects", json={"name": "Other Car", "template": "blank"}).json()
+    foreign = _tree(client, other["id"])["nodes"][0]
+
+    r = client.post("/api/milestones", json={
+        "project_id": project["id"], "title": "Wrong tree",
+        "due_date": "2026-02-01", "node_id": foreign["id"],
+    })
+    assert r.status_code == 400
+    assert "different tree" in r.json()["detail"]
+
+
+def test_deleting_the_linked_part_keeps_the_goal(client, project):
+    """SET NULL, not CASCADE. A part being deleted is exactly when you still
+    want to see the deadline that referred to it."""
+    root = _tree(client, project["id"])["nodes"][0]
+    part = _add(client, project["id"], root["id"], "Fuel tank mount")
+    made = _goal(client, project["id"], "Fuel tank mounted", "2026-01-20", node_id=part["id"])
+
+    assert client.delete(f"/api/nodes/{part['id']}").status_code == 200
+
+    rows = client.get(f"/api/milestones?project_id={project['id']}").json()
+    row = next(r for r in rows if r["id"] == made["id"])
+    assert row["node_id"] is None
+    assert row["title"] == "Fuel tank mounted"
+
+
+def test_deleting_a_project_takes_its_timeline_with_it(client):
+    doomed = client.post("/api/projects", json={"name": "Doomed", "template": "blank"}).json()
+    _goal(client, doomed["id"], "Never happens", "2026-05-01")
+
+    assert client.delete(f"/api/projects/{doomed['id']}").status_code == 204
+    assert client.get(f"/api/milestones?project_id={doomed['id']}").status_code == 404
+
+
+def test_a_member_can_tick_a_goal_off_but_not_create_or_delete_one(anon, client, project):
+    """The line everywhere else in the app: editing is any member, adding and
+    deleting is a lead. Someone who finished the work should not need a lead to
+    tick the box."""
+    made = _goal(client, project["id"], "DAQ on car", "2026-03-01")
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("member@school.edu")}
+
+        assert anon.get(f"/api/milestones?project_id={project['id']}",
+                        headers=h).status_code == 200
+
+        ticked = anon.patch(f"/api/milestones/{made['id']}", headers=h, json={"done": True})
+        assert ticked.status_code == 200, ticked.text
+        assert ticked.json()["done"] is True
+
+        assert anon.post("/api/milestones", headers=h, json={
+            "project_id": project["id"], "title": "Mine", "due_date": "2026-03-02",
+        }).status_code == 403
+        assert anon.delete(f"/api/milestones/{made['id']}", headers=h).status_code == 403
+
+    # and it really is still there
+    rows = client.get(f"/api/milestones?project_id={project['id']}").json()
+    assert any(r["id"] == made["id"] for r in rows)
+
+
+def test_a_goal_needs_a_title_and_a_date(client, project):
+    assert client.post("/api/milestones", json={
+        "project_id": project["id"], "title": "", "due_date": "2026-02-01"}).status_code == 422
+    assert client.post("/api/milestones", json={
+        "project_id": project["id"], "title": "No date"}).status_code == 422
+    assert client.post("/api/milestones", json={
+        "project_id": project["id"], "title": "Bad date", "due_date": "the 12th"}).status_code == 422

@@ -1079,7 +1079,518 @@ a {
   flex-shrink: 0;
 }
 
+/* ===== Card drill-down (FlowView) ===== */
+/* One level of the tree at a time. Lives in the same pane as the tree and
+   scrolls the same way, so switching between them does not move the page. */
+
+.flow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px 16px;
+}
+
+.flow-crumbs {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-bottom: 12px;
+  position: sticky;
+  top: 0;
+  /* Opaque: cards scroll underneath this. */
+  background: var(--bg-soft);
+  padding: 4px 0 8px;
+  z-index: 2;
+}
+.crumb-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+.crumb {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.84rem;
+  padding: 4px 7px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.crumb:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.crumb:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.crumb.current {
+  color: var(--text);
+  font-weight: 600;
+}
+.crumb-sep {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  flex: none;
+}
+
+.flow-cards {
+  display: grid;
+  /* auto-fill, not auto-fit: with two cards left after a filter, auto-fit
+     stretches them across the whole pane and they stop looking like cards. */
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  gap: 10px;
+}
+
+.flow-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+  font: inherit;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  min-width: 0;
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.flow-card:hover {
+  border-color: var(--accent);
+  background: var(--surface-2);
+}
+.flow-card:active {
+  transform: translateY(1px);
+}
+.flow-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+/* A leaf opens nothing, so it should not invite a click the same way. */
+.flow-card.is-leaf {
+  border-style: dashed;
+}
+.flow-card.dim {
+  opacity: 0.4;
+}
+.flow-card.dim:hover {
+  opacity: 1;
+}
+/* Contains a match but is not one itself. Distinct from both: not a hit, but
+   emphatically not a miss either -- it is the way in. */
+.flow-card.context {
+  border-color: var(--accent);
+  border-style: solid;
+}
+.flow-card.context .flow-card-open {
+  font-weight: 600;
+}
+
+.flow-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.flow-card-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+  line-height: 1.3;
+  /* Wrap rather than ellipsis: a card has the room, and "Upper Control Arm
+     Bracket" truncated to "Upper Control..." is the same as no label. */
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+.flow-card-pn {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+.flow-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+.flow-card-who::before {
+  content: '· ';
+}
+.flow-card-files::before {
+  content: '· ';
+}
+.flow-card-tags {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.flow-card-more {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+.flow-card-open {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: auto;
+  padding-top: 6px;
+  font-size: 0.76rem;
+  color: var(--accent);
+  width: 100%;
+}
+.flow-card-deep {
+  color: var(--text-muted);
+}
+.flow-card-arrow {
+  margin-left: auto;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* ===== Project timeline ===== */
+/* Dated goals on a horizontal axis, labels alternating above and below, the
+   way the team already draws it on a whiteboard. Colour carries the state:
+   green done, red late, amber soon, blue still comfortable. */
+
+.timeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tl-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.tl-head h2 {
+  font-family: var(--font-head);
+  font-size: 1.05rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.tl-project {
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-left: 6px;
+}
+.tl-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.tl-stat-late {
+  color: var(--danger);
+  font-weight: 600;
+}
+.tl-stat-soon {
+  color: #f59e0b;
+}
+
+.tl-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.tl-add .input:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+
+/* --- the axis ------------------------------------------------------------ */
+
+.tl-scroll {
+  /* flex: none matters. .timeline is a flex column, so without it the band is
+     a shrinkable child and the list below squeezes it down to a sliver --
+     the inline height on .tl-track is a height, not a floor. */
+  flex: none;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0 28px;
+}
+.tl-track {
+  position: relative;
+  /* Never compress below this: a season squeezed into a phone width puts
+     every February date on the same pixel. Scroll instead. */
+  min-width: 860px;
+}
+
+.tl-axis {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--brand);
+  border-radius: 1px;
+}
+
+.tl-month {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1px dashed var(--border);
+}
+.tl-month-label {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  font-family: var(--font-head);
+  font-size: 0.66rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.tl-month-label em {
+  font-style: normal;
+  color: var(--text-dim);
+}
+
+.tl-today {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 2px solid var(--accent);
+  z-index: 1;
+}
+.tl-today-label {
+  position: absolute;
+  bottom: 2px;
+  left: 4px;
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* --- the flags ----------------------------------------------------------- */
+/* Anchored on the axis and grown outwards. `--lane` is how many rows out this
+   one sits, which is what keeps a crowded fortnight readable. */
+
+.tl-flag {
+  position: absolute;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  z-index: 2;
+}
+.tl-flag.above {
+  transform: translateY(-100%);
+}
+.tl-flag.below {
+  flex-direction: column-reverse;
+}
+
+.tl-stem {
+  width: 1px;
+  /* Each lane pushes the label one row further from the axis. */
+  height: calc(14px + var(--lane) * 64px);
+  background: var(--border);
+  flex: none;
+}
+.tl-dot {
+  position: absolute;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--bg-soft);
+  background: var(--accent);
+}
+.tl-flag.above .tl-dot {
+  bottom: -5px;
+}
+.tl-flag.below .tl-dot {
+  top: -5px;
+}
+
+.tl-label {
+  display: block;
+  text-align: left;
+  font: inherit;
+  /* An explicit width, not max-width. The flag is absolutely positioned, so
+     near the right edge it shrink-to-fits into the little space left and the
+     title breaks mid-word. A fixed width keeps every label the same size and
+     lets .at-end flip it cleanly. */
+  width: 168px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+}
+.tl-label:hover {
+  border-color: var(--accent);
+}
+/* Grows left from the dot instead of right, so the last goal of the season
+   does not hang off the end of the track. */
+.tl-flag.at-end .tl-label {
+  transform: translateX(-100%);
+  border-left-width: 1px;
+  border-right-width: 3px;
+}
+.tl-flag.at-end.state-done .tl-label { border-right-color: var(--ok); }
+.tl-flag.at-end.state-overdue .tl-label { border-right-color: var(--danger); }
+.tl-flag.at-end.state-soon .tl-label { border-right-color: #f59e0b; }
+.tl-flag.at-end.state-ahead .tl-label { border-right-color: var(--accent); }
+.tl-label-title {
+  /* Clamped to two lines so the flag's height is predictable -- the band
+     height is computed from a constant that assumes it. The full title is on
+     the flag's tooltip and in the list below. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 0.78rem;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.tl-label-date {
+  display: block;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+
+/* State is the whole point of the colour here, so it drives the dot and the
+   label's left edge together. */
+.tl-flag.state-done .tl-dot { background: var(--ok); }
+.tl-flag.state-done .tl-label { border-left-color: var(--ok); opacity: 0.65; }
+.tl-flag.state-done .tl-label-title { text-decoration: line-through; }
+.tl-flag.state-overdue .tl-dot { background: var(--danger); }
+.tl-flag.state-overdue .tl-label { border-left-color: var(--danger); }
+.tl-flag.state-soon .tl-dot { background: #f59e0b; }
+.tl-flag.state-soon .tl-label { border-left-color: #f59e0b; }
+.tl-flag.state-ahead .tl-dot { background: var(--accent); }
+.tl-flag.state-ahead .tl-label { border-left-color: var(--accent); }
+
+/* --- the list ------------------------------------------------------------ */
+/* Editing a date in a row beats editing it on a flag. */
+
+.tl-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+.tl-row.state-done { border-left-color: var(--ok); opacity: 0.6; }
+.tl-row.state-overdue { border-left-color: var(--danger); }
+.tl-row.state-soon { border-left-color: #f59e0b; }
+.tl-row.state-ahead { border-left-color: var(--accent); }
+
+.tl-row-title {
+  flex: 1;
+  min-width: 170px;
+}
+.tl-row.is-done .tl-row-title {
+  text-decoration: line-through;
+  color: var(--text-muted);
+}
+.tl-row-due {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  min-width: 84px;
+}
+.tl-row.state-overdue .tl-row-due {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.workspace-switch {
+  flex: none;
+}
+
 @media (max-width: 720px) {
+  /* The axis keeps its min-width and scrolls; the list below is the part you
+     actually work in on a phone, so it stacks. */
+  .timeline {
+    padding: 10px 10px 16px;
+  }
+  .tl-scroll {
+    padding: 0 14px;
+  }
+  .tl-stats {
+    margin-left: 0;
+    width: 100%;
+  }
+  .tl-row {
+    gap: 6px;
+  }
+  .tl-row-title {
+    min-width: 0;
+    flex-basis: 100%;
+    order: -1;
+  }
+  .tl-add .input:first-child {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+
+  /* One column on a phone: two 212px cards do not fit, and a card squeezed to
+     150px loses the name it exists to show. */
+  .flow-cards {
+    grid-template-columns: 1fr;
+  }
+  .flow {
+    padding: 8px 10px 14px;
+  }
+  .crumb {
+    max-width: 150px;
+    /* 44px tap target, same as the rest of the phone layout. */
+    padding: 10px 8px;
+  }
+  .flow-card {
+    padding: 13px 12px;
+  }
+
   /* A row that wraps beats a name column squeezed to nothing next to a
      "Remove admin" button. */
   .modal {

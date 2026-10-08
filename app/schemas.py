@@ -6,7 +6,7 @@ no migration; sending a bogus one still gets a 422 with a helpful message.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -281,6 +281,44 @@ class ProjectOut(BaseModel):
 class ProjectSummary(ProjectOut):
     node_count: int = 0
     attachment_count: int = 0
+
+
+# --- milestones (the project timeline) --------------------------------------
+
+class MilestoneIn(BaseModel):
+    """A dated goal. Everything except the title and the date is optional."""
+
+    project_id: int
+    title: str = Field(min_length=1, max_length=200)
+    due_date: date
+    detail: str | None = None
+    owner_id: int | None = None
+    node_id: int | None = None
+
+
+class MilestoneUpdate(BaseModel):
+    """A partial edit. project_id is absent on purpose -- moving a goal to
+    another tree is not an edit, it is a different goal."""
+
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    due_date: date | None = None
+    detail: str | None = None
+    owner_id: int | None = None
+    node_id: int | None = None
+    done: bool | None = None
+
+
+class MilestoneOut(BaseModel):
+    model_config = ORM
+    id: int
+    project_id: int
+    title: str
+    detail: str | None = None
+    due_date: date
+    done: bool = False
+    done_at: datetime | None = None
+    owner_id: int | None = None
+    node_id: int | None = None
 
 
 class TreeResponse(BaseModel):

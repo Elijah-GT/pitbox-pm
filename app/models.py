@@ -22,11 +22,12 @@ moving parts for a team that hands off every year).
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -339,4 +340,60 @@ class Attachment(Base):
     __table_args__ = (
         UniqueConstraint("node_id", "filename", "version", name="uq_attachment_version"),
         Index("ix_attachments_node_current", "node_id", "is_current"),
+    )
+
+
+class Milestone(Base):
+    """A dated goal on the project timeline.
+
+    The team already plans on a whiteboard: a horizontal line from October to
+    competition, with dates hung off it -- "roll cage doc package 2/12", "BOM",
+    "car fully assembled". This is that board, so it survives the room being
+    wiped.
+
+    Deliberately NOT a Node. A milestone is not part of the car: it has no
+    quantity, no cost, no vendor, no place in the assembly tree, and it would
+    pollute every rollup and BOM export if it lived there. What it has that a
+    node does not is a date.
+
+    due_date is a DATE, not a datetime. A deadline is a day -- "2/12", not
+    "2/12 at 00:00 UTC" -- and storing an instant means the deadline silently
+    lands on a different day depending on the reader's timezone.
+    """
+
+    __tablename__ = "milestones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    detail: Mapped[str | None] = mapped_column(Text)
+    due_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # When it was ticked off, for "we said 2/12 and it landed 2/27" after the
+    # season. Set and cleared by the API, never by hand.
+    done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    owner_id: Mapped[int | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"))
+    # Optional link to the part or subsystem this goal is about, so "fuel tank
+    # mount" on the timeline can jump to the actual node. SET NULL rather than
+    # CASCADE: deleting a part should not silently delete the deadline that
+    # referred to it -- that is exactly when you want to still see the goal.
+    node_id: Mapped[int | None] = mapped_column(ForeignKey("nodes.id", ondelete="SET NULL"))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    project: Mapped[Project] = relationship()
+    owner: Mapped[Member | None] = relationship()
+    node: Mapped["Node | None"] = relationship()
+
+    __table_args__ = (
+        # Every read is "this project's milestones, in date order".
+        Index("ix_milestones_project_due", "project_id", "due_date"),
     )

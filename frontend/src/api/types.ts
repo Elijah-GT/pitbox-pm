@@ -57,6 +57,22 @@ export interface TreeNode {
   updated_at: string
 }
 
+/** A dated goal on the project timeline. Not a node -- it has no place in the
+ *  assembly tree, but it has the one thing no node has: a date. */
+export interface Milestone {
+  id: number
+  project_id: number
+  title: string
+  detail: string | null
+  /** ISO calendar date, "2026-02-12". A deadline is a day, not an instant. */
+  due_date: string
+  done: boolean
+  done_at: string | null
+  owner_id: number | null
+  /** Optional link to the part or subsystem this goal is about. */
+  node_id: number | null
+}
+
 export interface EffectiveTag {
   tag_id: number
   slug: string

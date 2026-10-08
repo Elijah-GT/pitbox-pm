@@ -8,6 +8,9 @@ interface Props {
   authMode: AuthMode
   /** Admin. Controls that add, delete or restructure are hidden without it. */
   isAdmin: boolean
+  /** Which half of the app is on screen: the part tree, or the dated goals. */
+  workspace: 'breakdown' | 'timeline'
+  onWorkspace: (next: 'breakdown' | 'timeline') => void
   onSwitch: (id: number) => void
   onNew: () => void
   onClone: () => void
@@ -18,8 +21,8 @@ interface Props {
 }
 
 export function TopBar({
-  projects, projectId, currentUser, authMode, isAdmin, onSwitch, onNew, onClone,
-  onDelete, onEditName, onManageTeam, onSignOut,
+  projects, projectId, currentUser, authMode, isAdmin, workspace, onWorkspace,
+  onSwitch, onNew, onClone, onDelete, onEditName, onManageTeam, onSignOut,
 }: Props) {
   return (
     <header className="topbar">
@@ -58,6 +61,22 @@ export function TopBar({
           </option>
         ))}
       </select>
+
+      {/* Two workspaces over the same project, so it sits next to the project
+          picker rather than inside either one. */}
+      <div className="segmented workspace-switch" role="group" aria-label="Workspace">
+        {(['breakdown', 'timeline'] as const).map((w) => (
+          <button
+            key={w}
+            type="button"
+            className={workspace === w ? 'active' : ''}
+            aria-pressed={workspace === w}
+            onClick={() => onWorkspace(w)}
+          >
+            {w === 'breakdown' ? 'Parts' : 'Timeline'}
+          </button>
+        ))}
+      </div>
 
       <div className="topbar-actions">
         {/* Hidden rather than disabled for everyone who is not an admin. A row

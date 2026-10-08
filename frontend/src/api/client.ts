@@ -1,6 +1,7 @@
 import type {
   Attachment,
   Member,
+  Milestone,
   DeleteResult,
   NodeDetail,
   ProjectOut,
@@ -102,6 +103,32 @@ export const api = {
    */
   setMemberAdmin: (id: number, isAdmin: boolean) =>
     withJson<Member>('PATCH')(`/api/members/${id}/admin`, { is_admin: isAdmin }),
+
+  /** The timeline for one tree, earliest goal first. */
+  listMilestones: (projectId: number) =>
+    request<Milestone[]>(`/api/milestones?project_id=${projectId}`),
+
+  /** Admin only -- adding a goal is planning. */
+  createMilestone: (payload: {
+    project_id: number
+    title: string
+    due_date: string
+    detail?: string | null
+    owner_id?: number | null
+    node_id?: number | null
+  }) => withJson<Milestone>('POST')('/api/milestones', payload),
+
+  /**
+   * Any member, including ticking it off: whoever finished the work knows it
+   * is finished, and needing a lead to tick a box is how a timeline goes stale.
+   */
+  updateMilestone: (
+    id: number,
+    payload: Partial<Pick<Milestone, 'title' | 'due_date' | 'detail' | 'owner_id' | 'node_id' | 'done'>>,
+  ) => withJson<Milestone>('PATCH')(`/api/milestones/${id}`, payload),
+
+  deleteMilestone: (id: number) =>
+    request<void>(`/api/milestones/${id}`, { method: 'DELETE' }),
 
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
 

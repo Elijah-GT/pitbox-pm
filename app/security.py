@@ -361,6 +361,11 @@ MEMBER_WRITABLE: frozenset[tuple[str, str]] = frozenset({
     # same filename makes a new version, so a mistake is fixable without a
     # destructive operation.
     ("POST", "/api/attachments"),
+    # Edit a timeline goal, which includes ticking it off. The person who
+    # finished the work is the one who knows it is finished; making them find a
+    # lead to tick a box is how a timeline stops getting updated. Creating and
+    # deleting goals is still planning, so it stays with the leads.
+    ("PATCH", "/api/milestones/{milestone_id}"),
 })
 
 # Used by both guards below, because a member hitting either one has the same

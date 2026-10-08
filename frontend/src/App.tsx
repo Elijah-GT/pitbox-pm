@@ -6,7 +6,9 @@ import { ConnectionPicker } from './components/ConnectionPicker'
 import { ContextMenu, type MenuTarget } from './components/ContextMenu'
 import { DetailPanel } from './components/DetailPanel'
 import { FilterBar } from './components/FilterBar'
+import { FlowView } from './components/FlowView'
 import { TeamPanel } from './components/TeamPanel'
+import { TimelineView } from './components/TimelineView'
 import { TopBar } from './components/TopBar'
 import { TreeView } from './components/TreeView'
 import { useToast } from './hooks/useToast'
@@ -39,6 +41,16 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<Member | null>(null)
   const [authMode, setAuthMode] = useState<AuthMode>('cloudflare')
   const [teamOpen, setTeamOpen] = useState(false)
+
+  // The card drill-down as an alternative to the tree. `flowFocusId` is which
+  // node's children are on screen; null means the top. Both are pure view
+  // state -- no extra fetch, no extra backend, same TreeIndex either way.
+  // Which half of the app: the part tree, or the dated goals. The timeline is
+  // project-wide and wants the full width, so it replaces the two-pane layout
+  // rather than squeezing into the tree pane.
+  const [workspace, setWorkspace] = useState<'breakdown' | 'timeline'>('breakdown')
+  const [view, setView] = useState<'tree' | 'flow'>('tree')
+  const [flowFocusId, setFlowFocusId] = useState<number | null>(null)
 
   // Three tiers, matching app/security.py exactly:
   //   read      anyone signed in
@@ -185,6 +197,10 @@ export default function App() {
     setProjectId(id)
     setSelectedId(null)
     setDetail(null)
+    // The focused node belongs to the tree we are leaving. Keeping its id would
+    // point at nothing, and FlowView would fall back to the top anyway -- do it
+    // explicitly so the breadcrumb cannot flash a stale name first.
+    setFlowFocusId(null)
   }
 
   const addChild = async (parent: TreeNode) => {
@@ -383,6 +399,22 @@ export default function App() {
     void setMyName(currentUser.name, true)
   }, [currentUser, authMode, setMyName])
 
+  /**
+   * Switch between the tree and the cards, carrying the place you were.
+   *
+   * Going to cards focuses the PARENT of whatever is selected, so the node you
+   * were looking at is on screen among its siblings rather than the view
+   * starting over at the top. Coming back the other way needs nothing: the
+   * tree renders from selectedId, which the cards keep up to date.
+   */
+  const switchView = (next: 'tree' | 'flow') => {
+    if (next === 'flow' && selectedId != null && index) {
+      const node = index.byId.get(selectedId)
+      if (node) setFlowFocusId(node.parent_id)
+    }
+    setView(next)
+  }
+
   const toggle = (id: number) => {
     setExpanded((cur) => {
       const next = new Set(cur)
@@ -411,6 +443,8 @@ export default function App() {
         currentUser={currentUser}
         authMode={authMode}
         isAdmin={isAdmin}
+        workspace={workspace}
+        onWorkspace={setWorkspace}
         onSwitch={switchProject}
         onNew={() => void newProject()}
         onClone={() => void cloneProject()}
@@ -430,6 +464,33 @@ export default function App() {
         }}
       />
 
+      {/* The timeline is its own workspace: full width, and without the
+          filter bar, which filters parts and has nothing to say about dates. */}
+      {workspace === 'timeline' && projectId != null && tree && (
+        <TimelineView
+          projectId={projectId}
+          projectName={tree.project.name}
+          nodes={tree.nodes}
+          members={tree.members}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          onOpenNode={(id) => {
+            // A goal links to a part; opening it has to take you to where
+            // parts live, not just select something you cannot see.
+            setWorkspace('breakdown')
+            setSelectedId(id)
+          }}
+          onError={showError}
+          onToast={show}
+        />
+      )}
+
+      {workspace === 'timeline' && (projectId == null || !tree) && (
+        <p className="loading">No tree selected, so there is nothing to plan yet.</p>
+      )}
+
+      {workspace === 'breakdown' && (
+      <>
       <FilterBar
         tags={tree?.tags ?? []}
         members={tree?.members ?? []}
@@ -463,24 +524,46 @@ export default function App() {
             />
 
             <div className="pane-head-actions">
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() => setExpanded(new Set((tree?.nodes ?? []).map((n) => n.id)))}
-              >
-                Expand
-              </button>
-              <button
-                type="button"
-                className="btn btn-sm"
-                onClick={() =>
-                  setExpanded(
-                    new Set((tree?.nodes ?? []).filter((n) => n.depth === 0).map((n) => n.id)),
-                  )
-                }
-              >
-                Collapse
-              </button>
+              {/* Expand/Collapse act on the tree's open branches; the card view
+                  shows exactly one level and has none, so they go away rather
+                  than sitting there doing nothing. */}
+              {view === 'tree' && (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() => setExpanded(new Set((tree?.nodes ?? []).map((n) => n.id)))}
+                  >
+                    Expand
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm"
+                    onClick={() =>
+                      setExpanded(
+                        new Set((tree?.nodes ?? []).filter((n) => n.depth === 0).map((n) => n.id)),
+                      )
+                    }
+                  >
+                    Collapse
+                  </button>
+                </>
+              )}
+
+              <div className="segmented" role="group" aria-label="View style">
+                {(['tree', 'flow'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={view === v ? 'active' : ''}
+                    aria-pressed={view === v}
+                    title={v === 'tree' ? 'The whole structure at once' : 'One level at a time'}
+                    onClick={() => switchView(v)}
+                  >
+                    {v === 'tree' ? 'Tree' : 'Cards'}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -492,7 +575,20 @@ export default function App() {
               No trees yet — click “+ New Tree” to start one.
             </p>
           )}
-          {!loading && index && visibility && (
+          {!loading && index && visibility && view === 'flow' && (
+            <FlowView
+              index={index}
+              visibility={visibility}
+              members={tree?.members ?? []}
+              focusId={flowFocusId}
+              selectedId={selectedId}
+              isolate={filter.mode === 'isolate'}
+              onFocus={setFlowFocusId}
+              onSelect={setSelectedId}
+            />
+          )}
+
+          {!loading && index && visibility && view === 'tree' && (
             <TreeView
               index={index}
               visibility={visibility}
@@ -512,9 +608,13 @@ export default function App() {
 
           {/* Both of these work for a plain member -- dragging re-parents, and
               their right-click menu carries Rename -- so the hint stands for
-              anyone who can edit, and only disappears for a signed-out view. */}
-          {canEdit && (
+              anyone who can edit. Neither applies to the cards, which navigate
+              rather than restructure. */}
+          {canEdit && view === 'tree' && (
             <p className="hint">Drag a row onto another to re-parent it. Right-click for actions.</p>
+          )}
+          {view === 'flow' && (
+            <p className="hint">Click a card to open it. Use the breadcrumb to come back up.</p>
           )}
         </section>
 
@@ -555,6 +655,9 @@ export default function App() {
           )}
         </section>
       </main>
+
+      </>
+      )}
 
       {menu && menuNode && canEdit && (
         <ContextMenu
