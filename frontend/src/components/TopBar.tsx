@@ -1,6 +1,19 @@
 import type { AuthMode } from '../api/client'
 import type { Member, ProjectSummary } from '../api/types'
 
+/**
+ * The three sections of the app, over the same project: what the car is made
+ * of, when things are due, and what the shop has to make.
+ */
+export type Workspace = 'breakdown' | 'timeline' | 'shop'
+
+const WORKSPACE_LABELS: Record<Workspace, string> = {
+  breakdown: 'Parts',
+  timeline: 'Timeline',
+  shop: 'Shop',
+}
+const WORKSPACE_ORDER = Object.keys(WORKSPACE_LABELS) as Workspace[]
+
 interface Props {
   projects: ProjectSummary[]
   projectId: number | null
@@ -8,9 +21,9 @@ interface Props {
   authMode: AuthMode
   /** Admin. Controls that add, delete or restructure are hidden without it. */
   isAdmin: boolean
-  /** Which half of the app is on screen: the part tree, or the dated goals. */
-  workspace: 'breakdown' | 'timeline'
-  onWorkspace: (next: 'breakdown' | 'timeline') => void
+  /** Which section of the app is on screen. */
+  workspace: Workspace
+  onWorkspace: (next: Workspace) => void
   onSwitch: (id: number) => void
   onNew: () => void
   onClone: () => void
@@ -62,10 +75,10 @@ export function TopBar({
         ))}
       </select>
 
-      {/* Two workspaces over the same project, so it sits next to the project
-          picker rather than inside either one. */}
+      {/* Sections over the same project, so this sits next to the project
+          picker rather than inside any one of them. */}
       <div className="segmented workspace-switch" role="group" aria-label="Workspace">
-        {(['breakdown', 'timeline'] as const).map((w) => (
+        {WORKSPACE_ORDER.map((w) => (
           <button
             key={w}
             type="button"
@@ -73,7 +86,7 @@ export function TopBar({
             aria-pressed={workspace === w}
             onClick={() => onWorkspace(w)}
           >
-            {w === 'breakdown' ? 'Parts' : 'Timeline'}
+            {WORKSPACE_LABELS[w]}
           </button>
         ))}
       </div>

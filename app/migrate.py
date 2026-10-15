@@ -33,6 +33,21 @@ ADDITIONS: dict[str, dict[str, str]] = {
         "last_login_at": "DATETIME",
         "name_confirmed": "BOOLEAN NOT NULL DEFAULT 0",
     },
+    # The milestones table shipped before these two existed, so anywhere that
+    # already deployed it has the table but not the columns -- and create_all()
+    # builds missing TABLES, never missing columns. Without this the timeline
+    # 500s on every read the moment the new code lands.
+    "milestones": {
+        "priority": "VARCHAR(20) NOT NULL DEFAULT 'normal'",
+        "kind": "VARCHAR(20) NOT NULL DEFAULT 'other'",
+    },
+    # Links arrived after the cut list shipped, so anywhere that already has
+    # the table needs the column added. JSON is TEXT in SQLite, and the default
+    # has to be a valid empty list -- otherwise every existing part reads back
+    # with links=None and every caller has to defend against it.
+    "mfg_parts": {
+        "links": "TEXT NOT NULL DEFAULT '[]'",
+    },
 }
 
 

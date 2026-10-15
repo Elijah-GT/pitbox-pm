@@ -366,6 +366,17 @@ MEMBER_WRITABLE: frozenset[tuple[str, str]] = frozenset({
     # lead to tick a box is how a timeline stops getting updated. Creating and
     # deleting goals is still planning, so it stays with the leads.
     ("PATCH", "/api/milestones/{milestone_id}"),
+    # Edit a cut-list part, and put its drawing on. The person at the bandsaw
+    # is the one who knows a part is done and which revision they cut from;
+    # making them find a lead first is how a shop list goes stale. Adding and
+    # deleting PARTS stays with the leads.
+    #
+    # Clearing the drawing is here too, deliberately. Uploading already
+    # discards the previous one -- drawings have no version history -- so
+    # making removal the stricter of the two would be a rule with no teeth.
+    ("PATCH", "/api/mfg-parts/{part_id}"),
+    ("PUT", "/api/mfg-parts/{part_id}/drawing"),
+    ("DELETE", "/api/mfg-parts/{part_id}/drawing"),
 })
 
 # Used by both guards below, because a member hitting either one has the same

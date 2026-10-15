@@ -17,6 +17,9 @@ Status = Literal[
     "in_fabrication", "assembled", "not_installed", "installed",
 ]
 Sourcing = Literal["make", "buy", "na"]
+GoalPriority = Literal["sae", "critical", "normal", "low"]
+GoalKind = Literal["design", "manufacturing", "other"]
+MfgStatus = Literal["todo", "in_progress", "done"]
 AttachmentKind = Literal[
     "datasheet", "cad", "drawing", "pcb", "firmware", "analysis", "photo", "other"
 ]
@@ -292,6 +295,8 @@ class MilestoneIn(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     due_date: date
     detail: str | None = None
+    priority: GoalPriority = "normal"
+    kind: GoalKind = "other"
     owner_id: int | None = None
     node_id: int | None = None
 
@@ -303,6 +308,8 @@ class MilestoneUpdate(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=200)
     due_date: date | None = None
     detail: str | None = None
+    priority: GoalPriority | None = None
+    kind: GoalKind | None = None
     owner_id: int | None = None
     node_id: int | None = None
     done: bool | None = None
@@ -315,10 +322,133 @@ class MilestoneOut(BaseModel):
     title: str
     detail: str | None = None
     due_date: date
+    priority: GoalPriority = "normal"
+    kind: GoalKind = "other"
     done: bool = False
     done_at: datetime | None = None
     owner_id: int | None = None
     node_id: int | None = None
+
+
+# --- manufacturing (the cut list) --------------------------------------------
+
+class MfgLink(BaseModel):
+    """A related link on a shop part: the part in Onshape, a vendor page.
+
+    The scheme check is the whole reason this model exists. These render as
+    real <a href> values, so a stored "javascript:..." URL would be stored XSS
+    that fires for whoever clicks it. Allowing only http and https rules out
+    data: and file: at the same time.
+    """
+
+    label: str | None = Field(default=None, max_length=80)
+    url: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("label")
+    @classmethod
+    def _tidy_label(cls, v: str | None) -> str | None:
+        return None if v is None else (v.strip() or None)
+
+    @field_validator("url")
+    @classmethod
+    def _only_web_urls(cls, v: str) -> str:
+        url = v.strip()
+        # Compared on a lowered copy but stored as typed: some paths are
+        # case-sensitive, and Onshape document ids are mixed case.
+        if not url.lower().startswith(("http://", "https://")):
+            raise ValueError("A link must start with http:// or https://")
+        return url
+
+
+def _blank_to_none(value: str | None) -> str | None:
+    """Trim, and treat "" as "not set".
+
+    An empty subsystem and a missing one mean the same thing to a person, and
+    letting both into the database means the cut list grows two separate "no
+    subsystem" groups -- one for NULL and one for "" -- which reads as a bug.
+    Sorting splits the same way: "" lands before "Front Suspension" while NULL
+    is deliberately sorted last.
+    """
+    if value is None:
+        return None
+    trimmed = value.strip()
+    return trimmed or None
+
+
+class MfgPartIn(BaseModel):
+    """A new part for the shop. Only the name is required -- the rest gets
+    filled in as the part moves from "somebody should cut this" to done."""
+
+    project_id: int
+    name: str = Field(min_length=1, max_length=200)
+    subsystem: str | None = Field(default=None, max_length=80)
+    status: MfgStatus = "todo"
+    notes: str | None = None
+    assignee_id: int | None = None
+    # Capped: these are a handful of references, not a bookmark folder, and an
+    # unbounded JSON list is an easy way to bloat every read of the cut list.
+    links: list[MfgLink] = Field(default_factory=list, max_length=12)
+
+    @field_validator("subsystem", "notes")
+    @classmethod
+    def _tidy(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+    @field_validator("name")
+    @classmethod
+    def _tidy_name(cls, v: str) -> str:
+        name = v.strip()
+        if not name:
+            raise ValueError("A part needs a name.")
+        return name
+
+
+class MfgPartUpdate(BaseModel):
+    """A partial edit. project_id is absent on purpose: moving a part to
+    another car is not an edit, it is a different part."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    subsystem: str | None = Field(default=None, max_length=80)
+    status: MfgStatus | None = None
+    notes: str | None = None
+    assignee_id: int | None = None
+    links: list[MfgLink] | None = Field(default=None, max_length=12)
+
+    @field_validator("subsystem", "notes")
+    @classmethod
+    def _tidy(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+    @field_validator("name")
+    @classmethod
+    def _tidy_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        name = v.strip()
+        if not name:
+            raise ValueError("A part needs a name.")
+        return name
+
+
+class MfgPartOut(BaseModel):
+    model_config = ORM
+    id: int
+    project_id: int
+    name: str
+    subsystem: str | None = None
+    status: MfgStatus = "todo"
+    notes: str | None = None
+    assignee_id: int | None = None
+    links: list[MfgLink] = Field(default_factory=list)
+
+    # The drawing. sha256 is deliberately NOT exposed: it is an internal
+    # storage address, and publishing it would let anyone probe the blob store
+    # for files they were never shown.
+    has_drawing: bool = False
+    drawing_filename: str | None = None
+    drawing_content_type: str | None = None
+    drawing_size_bytes: int | None = None
+    drawing_uploaded_at: datetime | None = None
 
 
 class TreeResponse(BaseModel):

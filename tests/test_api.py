@@ -1563,3 +1563,446 @@ def test_a_goal_needs_a_title_and_a_date(client, project):
         "project_id": project["id"], "title": "No date"}).status_code == 422
     assert client.post("/api/milestones", json={
         "project_id": project["id"], "title": "Bad date", "due_date": "the 12th"}).status_code == 422
+
+
+# --- goal priority and kind ---------------------------------------------------
+
+def test_a_goal_defaults_to_normal_priority_and_no_particular_kind(client, project):
+    made = _goal(client, project["id"], "Something", "2027-01-05")
+    assert made["priority"] == "normal"
+    assert made["kind"] == "other"
+
+
+def test_a_goal_can_be_created_as_a_baja_sae_deadline(client, project):
+    made = _goal(client, project["id"], "Cost report submission", "2027-02-19",
+                 priority="sae", kind="other")
+    assert made["priority"] == "sae"
+
+    rows = client.get(f"/api/milestones?project_id={project['id']}").json()
+    assert any(r["priority"] == "sae" for r in rows)
+
+
+def test_priority_and_kind_can_be_changed_later(client, project):
+    made = _goal(client, project["id"], "Frame jig", "2026-12-01")
+    res = client.patch(f"/api/milestones/{made['id']}",
+                       json={"priority": "critical", "kind": "manufacturing"})
+    assert res.status_code == 200, res.text
+    assert res.json()["priority"] == "critical"
+    assert res.json()["kind"] == "manufacturing"
+
+
+def test_a_member_can_recategorise_a_goal_without_being_an_admin(anon, client, project):
+    """Same line as ticking it off: this edits a goal that already exists."""
+    made = _goal(client, project["id"], "Uprights machined", "2027-01-30")
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("member@school.edu")}
+        res = anon.patch(f"/api/milestones/{made['id']}", headers=h,
+                         json={"kind": "manufacturing"})
+        assert res.status_code == 200, res.text
+        assert res.json()["kind"] == "manufacturing"
+
+
+@pytest.mark.parametrize("bad", [
+    {"priority": "urgent"},      # not one of ours
+    {"priority": "SAE"},         # the vocabulary is lowercase
+    {"kind": "electrical"},      # a subteam, not a kind of work
+    {"kind": ""},
+])
+def test_a_bogus_priority_or_kind_is_refused(client, project, bad):
+    made = _goal(client, project["id"], "Vocabulary check", "2027-03-01")
+    assert client.patch(f"/api/milestones/{made['id']}", json=bad).status_code == 422
+    assert client.post("/api/milestones", json={
+        "project_id": project["id"], "title": "x", "due_date": "2027-03-01", **bad,
+    }).status_code == 422
+
+
+# --- the cut list (manufacturing) ---------------------------------------------
+
+def _part(client, project_id, name, **kw):
+    r = client.post("/api/mfg-parts", json={"project_id": project_id, "name": name, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _put_drawing(client, part_id, filename, data, content_type="application/pdf"):
+    return client.put(
+        f"/api/mfg-parts/{part_id}/drawing",
+        files={"file": (filename, data, content_type)},
+    )
+
+
+def test_the_cut_list_reads_in_shop_order(client, project):
+    """Grouped by subsystem so everything for the rollcage is together, and the
+    odds and ends with no subsystem sort last rather than leading the list."""
+    _part(client, project["id"], "Upper A-arm tube", subsystem="Front Suspension")
+    _part(client, project["id"], "Weld fixture")                       # no subsystem
+    _part(client, project["id"], "Main hoop", subsystem="Rollcage")
+    _part(client, project["id"], "Door bar", subsystem="Rollcage")
+
+    rows = client.get(f"/api/mfg-parts?project_id={project['id']}").json()
+    assert [r["name"] for r in rows] == [
+        "Upper A-arm tube",   # Front Suspension
+        "Door bar",           # Rollcage, alphabetical within the subsystem
+        "Main hoop",
+        "Weld fixture",       # no subsystem -> last
+    ]
+    assert all(r["status"] == "todo" and r["has_drawing"] is False for r in rows)
+
+
+def test_a_part_carries_a_name_subsystem_notes_and_a_person(client, project):
+    me = client.get("/api/auth/me").json()
+    made = _part(client, project["id"], "Lower A-arm tube",
+                 subsystem="Front Suspension",
+                 notes="0.058 wall, 4130. Cut 4, miter both ends.",
+                 assignee_id=me["id"])
+    assert made["subsystem"] == "Front Suspension"
+    assert "4130" in made["notes"]
+    assert made["assignee_id"] == me["id"]
+
+
+def test_uploading_a_drawing_then_fetching_it(client, project):
+    made = _part(client, project["id"], "Main hoop")
+    res = _put_drawing(client, made["id"], "main-hoop.pdf", b"%PDF-1.4 fake drawing")
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["has_drawing"] is True
+    assert body["drawing_filename"] == "main-hoop.pdf"
+    assert body["drawing_content_type"] == "application/pdf"
+    assert body["drawing_uploaded_at"] is not None
+
+    got = client.get(f"/api/mfg-parts/{made['id']}/drawing")
+    assert got.status_code == 200
+    assert got.content == b"%PDF-1.4 fake drawing"
+
+
+def test_a_drawing_is_shown_inline_and_not_sandboxed(client, project):
+    """Deliberately NOT sandboxed.
+
+    A CSP sandbox on a PDF response makes Chrome refuse to render it -- "This
+    page has been blocked by Chrome" inside an iframe, or a silent download on
+    direct navigation. `sandbox allow-scripts` behaves the same way, because
+    the viewer is itself JavaScript. You can sandbox a PDF or display it, not
+    both, and a drawing nobody can look at is not worth the header.
+
+    This test exists to stop someone adding the sandbox back for good-sounding
+    reasons and quietly breaking every drawing in the shop.
+    """
+    made = _part(client, project["id"], "Inline check")
+    _put_drawing(client, made["id"], "d.pdf", b"%PDF-1.4 x")
+
+    res = client.get(f"/api/mfg-parts/{made['id']}/drawing")
+    assert res.headers["content-disposition"].startswith("inline")
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert "content-security-policy" not in res.headers, (
+        "a CSP sandbox here stops Chrome rendering the drawing at all"
+    )
+
+
+def test_the_download_link_forces_a_save(client, project):
+    made = _part(client, project["id"], "Download check")
+    _put_drawing(client, made["id"], "d.pdf", b"%PDF-1.4 x")
+
+    res = client.get(f"/api/mfg-parts/{made['id']}/drawing?download=1")
+    assert res.headers["content-disposition"].startswith("attachment")
+    assert res.headers["content-type"] == "application/octet-stream"
+
+
+def test_an_unrenderable_drawing_downloads_rather_than_displaying(client, project):
+    """A .dxf has no business being inlined, and a helpfully-renamed .html has
+    even less."""
+    made = _part(client, project["id"], "DXF check")
+    _put_drawing(client, made["id"], "flat-pattern.dxf", b"0\nSECTION\n", "image/vnd.dxf")
+
+    res = client.get(f"/api/mfg-parts/{made['id']}/drawing")
+    assert res.headers["content-disposition"].startswith("attachment")
+
+
+def test_a_part_with_no_drawing_says_so(client, project):
+    made = _part(client, project["id"], "Nothing attached")
+    assert client.get(f"/api/mfg-parts/{made['id']}/drawing").status_code == 404
+
+
+def test_the_storage_address_never_leaves_the_server(client, project):
+    """sha256 is an address into the blob store. Publishing it would let anyone
+    probe for files they were never shown."""
+    made = _part(client, project["id"], "Hash check")
+    body = _put_drawing(client, made["id"], "d.pdf", b"%PDF-1.4 x").json()
+    assert "drawing_sha256" not in body
+
+
+def test_replacing_a_drawing_frees_the_old_one(client, project):
+    import hashlib
+
+    from app import storage
+
+    made = _part(client, project["id"], "Revision check")
+    _put_drawing(client, made["id"], "rev-a.pdf", b"%PDF revision A")
+    old_sha = hashlib.sha256(b"%PDF revision A").hexdigest()
+    assert storage.blob_path(old_sha).exists()
+
+    _put_drawing(client, made["id"], "rev-b.pdf", b"%PDF revision B")
+    # Five revisions should not leave five dead blobs behind.
+    assert not storage.blob_path(old_sha).exists()
+    assert client.get(f"/api/mfg-parts/{made['id']}/drawing").content == b"%PDF revision B"
+
+
+def test_deleting_a_part_frees_its_drawing(client, project):
+    import hashlib
+
+    from app import storage
+
+    made = _part(client, project["id"], "Doomed part")
+    _put_drawing(client, made["id"], "doomed.pdf", b"%PDF doomed bytes")
+    sha = hashlib.sha256(b"%PDF doomed bytes").hexdigest()
+    assert storage.blob_path(sha).exists()
+
+    assert client.delete(f"/api/mfg-parts/{made['id']}").status_code == 204
+    assert not storage.blob_path(sha).exists()
+
+
+def test_a_drawing_shared_with_a_node_attachment_survives(client, project):
+    """THE trap in content-addressed storage: the same PDF uploaded to a tree
+    node and set as a part's drawing is ONE file on disk. Clearing the drawing
+    must not pull the bytes out from under the attachment."""
+    import hashlib
+
+    from app import storage
+
+    shared = b"%PDF-1.4 the very same bytes"
+    sha = hashlib.sha256(shared).hexdigest()
+
+    root = _tree(client, project["id"])["nodes"][0]
+    att = client.post("/api/attachments", files={"file": ("shared.pdf", shared)},
+                      data={"node_id": str(root["id"])})
+    assert att.status_code == 201, att.text
+    att_id = att.json()["id"]
+
+    made = _part(client, project["id"], "Shares a file")
+    _put_drawing(client, made["id"], "shared.pdf", shared)
+    assert storage.blob_path(sha).exists()
+
+    # Drop the part's drawing -- the node attachment still needs these bytes.
+    assert client.delete(f"/api/mfg-parts/{made['id']}/drawing").status_code == 200
+    assert storage.blob_path(sha).exists(), "clearing a drawing deleted bytes an attachment uses"
+    assert client.get(f"/api/attachments/{att_id}/download").content == shared
+
+    # And the mirror image: deleting the attachment must not break the drawing.
+    _put_drawing(client, made["id"], "shared.pdf", shared)
+    assert client.delete(f"/api/attachments/{att_id}").status_code == 204
+    assert storage.blob_path(sha).exists(), "deleting an attachment deleted a part's drawing"
+    assert client.get(f"/api/mfg-parts/{made['id']}/drawing").content == shared
+
+
+def test_the_blob_collector_counts_drawings_too(client, project):
+    """scripts/gc_blobs.py builds its 'referenced' set from the database. If it
+    only looked at attachments, --delete would wipe every drawing."""
+    import hashlib
+
+    from sqlalchemy import select
+
+    from app.database import SessionLocal
+    from app.models import Attachment, MfgPart
+
+    made = _part(client, project["id"], "Collector check")
+    _put_drawing(client, made["id"], "gc.pdf", b"%PDF gc bytes")
+    sha = hashlib.sha256(b"%PDF gc bytes").hexdigest()
+
+    with SessionLocal() as db:
+        referenced = {r for r in db.scalars(select(Attachment.sha256))}
+        referenced |= {r for r in db.scalars(select(MfgPart.drawing_sha256)) if r is not None}
+    assert sha in referenced
+
+
+def test_a_member_can_work_the_list_but_not_add_or_delete_parts(anon, client, project):
+    """Same line as everywhere else: the person at the bandsaw marks it done
+    and uploads what they cut from; leads decide what is on the list."""
+    made = _part(client, project["id"], "Member check")
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("shop@school.edu")}
+
+        assert anon.get(f"/api/mfg-parts?project_id={project['id']}",
+                        headers=h).status_code == 200
+        assert anon.patch(f"/api/mfg-parts/{made['id']}", headers=h,
+                          json={"status": "done", "notes": "cut 4"}).status_code == 200
+        assert anon.put(f"/api/mfg-parts/{made['id']}/drawing", headers=h,
+                        files={"file": ("m.pdf", b"%PDF m")}).status_code == 200
+        assert anon.delete(f"/api/mfg-parts/{made['id']}/drawing",
+                           headers=h).status_code == 200
+
+        assert anon.post("/api/mfg-parts", headers=h, json={
+            "project_id": project["id"], "name": "Mine"}).status_code == 403
+        assert anon.delete(f"/api/mfg-parts/{made['id']}", headers=h).status_code == 403
+
+    assert any(r["id"] == made["id"]
+               for r in client.get(f"/api/mfg-parts?project_id={project['id']}").json())
+
+
+def test_a_part_carries_related_links(client, project):
+    made = _part(client, project["id"], "Main hoop", links=[
+        {"label": "Onshape", "url": "https://cad.onshape.com/documents/AbC123/w/Xy/e/Zz"},
+        {"url": "https://www.mcmaster.com/4322T19/"},
+    ])
+    assert [link["label"] for link in made["links"]] == ["Onshape", None]
+    # Case is preserved: Onshape document ids are mixed case and paths can be
+    # case-sensitive.
+    assert "AbC123" in made["links"][0]["url"]
+
+    cleared = client.patch(f"/api/mfg-parts/{made['id']}", json={"links": []}).json()
+    assert cleared["links"] == []
+
+
+def test_a_part_defaults_to_no_links(client, project):
+    assert _part(client, project["id"], "No links yet")["links"] == []
+
+
+@pytest.mark.parametrize("bad_url", [
+    "javascript:alert(document.cookie)",   # stored XSS, the reason this is checked
+    "JavaScript:alert(1)",                 # the check is case-insensitive
+    "data:text/html,<script>alert(1)</script>",
+    "file:///etc/passwd",
+    "ftp://example.com/x",
+    "/api/projects",                       # relative, no scheme
+    "cad.onshape.com/documents/x",         # bare host, no scheme
+])
+def test_a_link_must_be_an_http_url(client, project, bad_url):
+    """These render as real hrefs, so a javascript: URL stored here would fire
+    for whoever clicked it."""
+    assert client.post("/api/mfg-parts", json={
+        "project_id": project["id"], "name": "Link check",
+        "links": [{"url": bad_url}],
+    }).status_code == 422
+
+    made = _part(client, project["id"], f"Patch check {abs(hash(bad_url)) % 10000}")
+    assert client.patch(f"/api/mfg-parts/{made['id']}",
+                        json={"links": [{"url": bad_url}]}).status_code == 422
+    # and nothing was written
+    assert client.get(f"/api/mfg-parts?project_id={project['id']}").json()
+    fresh = next(p for p in client.get(
+        f"/api/mfg-parts?project_id={project['id']}").json() if p["id"] == made["id"])
+    assert fresh["links"] == []
+
+
+def test_the_migration_adds_links_to_an_existing_cut_list():
+    """mfg_parts shipped before links existed, so a database that already has
+    the table needs the column added -- and the default has to be a valid
+    empty list, not NULL, or every existing part reads back broken."""
+    import json
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    import sqlalchemy
+
+    from app.migrate import run_migrations
+
+    tmp = Path(tempfile.mkdtemp(prefix="pitbox-mfg-oldschema-")) / "old.db"
+    raw = sqlite3.connect(tmp)
+    raw.executescript(
+        """
+        CREATE TABLE mfg_parts (
+          id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL,
+          name VARCHAR(200) NOT NULL, subsystem VARCHAR(80),
+          status VARCHAR(20) NOT NULL DEFAULT 'todo', notes TEXT,
+          assignee_id INTEGER, drawing_sha256 VARCHAR(64),
+          drawing_filename VARCHAR(255), drawing_content_type VARCHAR(120),
+          drawing_size_bytes INTEGER, drawing_uploaded_at DATETIME,
+          created_at DATETIME, updated_at DATETIME);
+        INSERT INTO mfg_parts (id, project_id, name) VALUES (1, 1, 'Main hoop');
+        """
+    )
+    raw.commit()
+    raw.close()
+
+    engine = sqlalchemy.create_engine(f"sqlite:///{tmp.as_posix()}")
+    assert "mfg_parts.links" in run_migrations(engine)
+
+    check = sqlite3.connect(tmp)
+    name, links = check.execute("SELECT name, links FROM mfg_parts").fetchone()
+    assert name == "Main hoop"
+    assert json.loads(links) == [], "the default must parse as an empty list, not NULL"
+    check.close()
+
+    assert run_migrations(engine) == []     # idempotent
+
+
+def test_a_blank_subsystem_is_stored_as_no_subsystem(client, project):
+    """Otherwise the list grows two separate "no subsystem" groups -- one for
+    NULL and one for "" -- and they sort to opposite ends, which reads as a
+    bug. Caught by actually using the thing: a part sent with subsystem="" led
+    the list instead of trailing it."""
+    blank = _part(client, project["id"], "  Spacer  ", subsystem="   ", notes="  ")
+    assert blank["subsystem"] is None
+    assert blank["notes"] is None
+    assert blank["name"] == "Spacer"          # trimmed on the way in
+
+    named = _part(client, project["id"], "Hoop", subsystem="Rollcage")
+    # Emptying it later must land in the same state as never setting it.
+    cleared = client.patch(f"/api/mfg-parts/{named['id']}", json={"subsystem": ""}).json()
+    assert cleared["subsystem"] is None
+
+    rows = client.get(f"/api/mfg-parts?project_id={project['id']}").json()
+    assert [r["subsystem"] for r in rows] == [None, None], "blank must sort with NULL, not before it"
+
+
+@pytest.mark.parametrize("bad", [{"status": "machining"}, {"status": ""}, {"name": ""},
+                                 {"name": "   "}])
+def test_a_bogus_part_field_is_refused(client, project, bad):
+    made = _part(client, project["id"], "Validation check")
+    assert client.patch(f"/api/mfg-parts/{made['id']}", json=bad).status_code == 422
+
+
+def test_deleting_a_project_takes_its_cut_list_with_it(client):
+    doomed = client.post("/api/projects",
+                         json={"name": "Doomed shop", "template": "blank"}).json()
+    _part(client, doomed["id"], "Goes away")
+    assert client.delete(f"/api/projects/{doomed['id']}").status_code == 204
+    assert client.get(f"/api/mfg-parts?project_id={doomed['id']}").status_code == 404
+
+
+def test_the_migration_adds_priority_and_kind_to_an_existing_timeline():
+    """The milestones table shipped before these columns existed, so a live
+    database has the table and not the columns. create_all() builds missing
+    TABLES and never missing columns, so without migrate.py the timeline 500s
+    on every read the moment the new code lands."""
+    import sqlite3
+    import tempfile
+    from pathlib import Path
+
+    import sqlalchemy
+
+    from app.migrate import run_migrations
+
+    tmp = Path(tempfile.mkdtemp(prefix="pitbox-oldschema-")) / "old.db"
+    raw = sqlite3.connect(tmp)
+    raw.executescript(
+        """
+        CREATE TABLE milestones (
+          id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL,
+          title VARCHAR(200) NOT NULL, detail TEXT, due_date DATE NOT NULL,
+          done BOOLEAN NOT NULL DEFAULT 0, done_at DATETIME,
+          owner_id INTEGER, node_id INTEGER,
+          created_at DATETIME, updated_at DATETIME);
+        INSERT INTO milestones (id, project_id, title, due_date, done)
+          VALUES (1, 1, 'Roll cage doc package', '2027-02-12', 0);
+        """
+    )
+    raw.commit()
+    raw.close()
+
+    engine = sqlalchemy.create_engine(f"sqlite:///{tmp.as_posix()}")
+    applied = run_migrations(engine)
+    assert "milestones.priority" in applied
+    assert "milestones.kind" in applied
+
+    check = sqlite3.connect(tmp)
+    cols = {r[1] for r in check.execute("PRAGMA table_info(milestones)")}
+    assert {"priority", "kind"} <= cols
+    # The existing row survives and is backfilled, not blanked.
+    row = check.execute("SELECT title, priority, kind FROM milestones").fetchone()
+    assert row == ("Roll cage doc package", "normal", "other")
+    check.close()
+
+    # Idempotent: booting twice must not try to add them again.
+    assert run_migrations(engine) == []

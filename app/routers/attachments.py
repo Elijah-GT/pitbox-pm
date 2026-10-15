@@ -134,12 +134,12 @@ def delete_attachment(attachment_id: int, db: Session = Depends(get_db)):
     db.delete(row)
     db.flush()
 
-    # Content-addressed storage means other nodes (or last year's car) may point
-    # at these same bytes. Only unlink when the last reference is gone.
-    still_used = db.scalar(
-        select(func.count()).select_from(Attachment).where(Attachment.sha256 == sha)
-    ) or 0
-    storage.delete_blob_if_orphaned(sha, still_referenced=still_used > 0)
+    # Content-addressed storage means other nodes (or last year's car, or a
+    # manufacturing part's drawing) may point at these same bytes. Only unlink
+    # when the last reference anywhere is gone -- storage.still_referenced()
+    # counts every table that can hold a blob, which is why this is not a plain
+    # COUNT over attachments.
+    storage.delete_blob_if_orphaned(sha, still_referenced=storage.still_referenced(db, sha))
 
     # Promote the newest surviving version so the node is never left with none marked current.
     survivor = db.scalar(

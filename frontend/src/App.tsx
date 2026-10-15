@@ -8,8 +8,9 @@ import { DetailPanel } from './components/DetailPanel'
 import { FilterBar } from './components/FilterBar'
 import { FlowView } from './components/FlowView'
 import { TeamPanel } from './components/TeamPanel'
+import { ShopView } from './components/ShopView'
 import { TimelineView } from './components/TimelineView'
-import { TopBar } from './components/TopBar'
+import { TopBar, type Workspace } from './components/TopBar'
 import { TreeView } from './components/TreeView'
 import { useToast } from './hooks/useToast'
 import {
@@ -48,7 +49,7 @@ export default function App() {
   // Which half of the app: the part tree, or the dated goals. The timeline is
   // project-wide and wants the full width, so it replaces the two-pane layout
   // rather than squeezing into the tree pane.
-  const [workspace, setWorkspace] = useState<'breakdown' | 'timeline'>('breakdown')
+  const [workspace, setWorkspace] = useState<Workspace>('breakdown')
   const [view, setView] = useState<'tree' | 'flow'>('tree')
   const [flowFocusId, setFlowFocusId] = useState<number | null>(null)
 
@@ -487,6 +488,32 @@ export default function App() {
 
       {workspace === 'timeline' && (projectId == null || !tree) && (
         <p className="loading">No tree selected, so there is nothing to plan yet.</p>
+      )}
+
+      {/* The cut list is its own section for the same reason as the timeline:
+          full width, and no filter bar, which filters parts of the car rather
+          than parts to be made. */}
+      {workspace === 'shop' && projectId != null && tree && (
+        <ShopView
+          projectId={projectId}
+          projectName={tree.project.name}
+          // This car's own subsystems, taken straight from the top level of its
+          // tree, so the suggestions say "Front Suspension" because that is
+          // what THIS team called it -- not a list hardcoded here.
+          subsystems={tree.nodes
+            .filter((n) => n.depth === 1)
+            .map((n) => n.name)
+            .sort((a, b) => a.localeCompare(b))}
+          members={tree.members}
+          canEdit={canEdit}
+          isAdmin={isAdmin}
+          onError={showError}
+          onToast={show}
+        />
+      )}
+
+      {workspace === 'shop' && (projectId == null || !tree) && (
+        <p className="loading">No tree selected, so there is nothing to make yet.</p>
       )}
 
       {workspace === 'breakdown' && (

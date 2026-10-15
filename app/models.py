@@ -85,6 +85,22 @@ SOURCING = ("make", "buy", "na")
 
 ATTACHMENT_KINDS = ("datasheet", "cad", "drawing", "pcb", "firmware", "analysis", "photo", "other")
 
+# How hard a timeline goal's date is.
+#
+# "sae" is not a severity, it is an authority: Baja SAE sets those dates and
+# the team cannot move them, so they are called out separately from anything
+# the team decided for itself. Everything else is the team's own judgement.
+GOAL_PRIORITIES = ("sae", "critical", "normal", "low")
+
+# What kind of work a goal is. Deliberately short -- "design" and
+# "manufacturing" are the two halves of the season the team actually splits on,
+# and "other" catches the paperwork and the ordering.
+GOAL_KINDS = ("design", "manufacturing", "other")
+
+# Where a shop-floor part has got to. Three states on purpose: a cut list is a
+# wall of tape labels, not a workflow engine.
+MFG_STATUSES = ("todo", "in_progress", "done")
+
 
 class Member(Base):
     """A person on the team: both the assignee list and the login account.
@@ -259,6 +275,83 @@ class Node(Base):
         return f"{self.path}%"
 
 
+class MfgPart(Base):
+    """A part to cut, machine or fabricate: one row of the shop's cut list.
+
+    NOT a Node, and deliberately flat. The tree answers "what is the car made
+    of"; this answers "what do we have to make this week", and they are not the
+    same list -- you cut three tube lengths the tree models as one A-arm, and
+    you cut jigs and fixtures that are not part of the car at all. Forcing
+    those into the assembly tree would corrupt the BOM and the rollups.
+
+    `name` is meant to match the part's name in Onshape exactly. That string IS
+    the join between the two systems: no ids to keep in sync, and somebody
+    holding a tube can search the same words in either place.
+
+    THE DRAWING lives in the same content-addressed blob store as node
+    attachments (app/storage.py) but is recorded in columns here rather than in
+    the attachments table, because attachments.node_id is NOT NULL and SQLite
+    cannot drop that without rebuilding the table -- not something to do to a
+    database with the team's files already in it. One current drawing per part;
+    re-uploading replaces it.
+
+    Because the store is shared and deduplicated, anything that frees blobs has
+    to consult BOTH tables -- the same PDF attached to a node and set as a
+    drawing is one file on disk. storage.still_referenced() is the one place
+    that knows this, and scripts/gc_blobs.py counts both too.
+    """
+
+    __tablename__ = "mfg_parts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Free text rather than an enum: the UI offers this project's own subsystem
+    # names taken from its tree, but a jig or a spare belongs to no subsystem,
+    # and the vocabulary should not need a code change to say so.
+    subsystem: Mapped[str | None] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="todo")
+    notes: Mapped[str | None] = mapped_column(Text)
+    assignee_id: Mapped[int | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"))
+
+    # Related links: the part in Onshape, a vendor page, a bend-table PDF.
+    # A JSON list of {"label": str, "url": str} rather than a child table,
+    # because nothing ever queries them -- they are only read back with the
+    # part. Same reasoning as Node.extra.
+    #
+    # The URLs are validated at the API boundary (schemas.MfgLink): http and
+    # https only. That matters because these render as real hrefs, and a
+    # "javascript:" URL stored here would be stored XSS.
+    links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # --- the current drawing -------------------------------------------------
+    drawing_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    drawing_filename: Mapped[str | None] = mapped_column(String(255))
+    drawing_content_type: Mapped[str | None] = mapped_column(String(120))
+    drawing_size_bytes: Mapped[int | None] = mapped_column(Integer)
+    drawing_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    project: Mapped[Project] = relationship()
+    assignee: Mapped[Member | None] = relationship()
+
+    __table_args__ = (
+        # Every read is "this project's cut list", usually grouped by subsystem.
+        Index("ix_mfg_parts_project", "project_id", "subsystem"),
+    )
+
+    @property
+    def has_drawing(self) -> bool:
+        return bool(self.drawing_sha256)
+
+
 class Tag(Base):
     """A label. Shared across every project so "Pending Machining" means the same
     thing on the 2026 car as it did on the 2025 one."""
@@ -371,6 +464,12 @@ class Milestone(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     detail: Mapped[str | None] = mapped_column(Text)
     due_date: Mapped[date] = mapped_column(Date, nullable=False)
+
+    # See GOAL_PRIORITIES. Validated at the API boundary, not as a DB enum, for
+    # the same reason as every other vocabulary here: adding a level should be
+    # a one-line edit, not a migration.
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="other")
 
     done: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # When it was ticked off, for "we said 2/12 and it landed 2/27" after the

@@ -59,6 +59,15 @@ export interface TreeNode {
 
 /** A dated goal on the project timeline. Not a node -- it has no place in the
  *  assembly tree, but it has the one thing no node has: a date. */
+/**
+ * How hard a goal's date is. "sae" is not a severity but an authority: Baja
+ * SAE sets those dates and the team cannot move them.
+ */
+export type GoalPriority = 'sae' | 'critical' | 'normal' | 'low'
+
+/** Which half of the season a goal belongs to. */
+export type GoalKind = 'design' | 'manufacturing' | 'other'
+
 export interface Milestone {
   id: number
   project_id: number
@@ -66,11 +75,49 @@ export interface Milestone {
   detail: string | null
   /** ISO calendar date, "2026-02-12". A deadline is a day, not an instant. */
   due_date: string
+  priority: GoalPriority
+  kind: GoalKind
   done: boolean
   done_at: string | null
   owner_id: number | null
   /** Optional link to the part or subsystem this goal is about. */
   node_id: number | null
+}
+
+/** Where a shop-floor part has got to. */
+export type MfgStatus = 'todo' | 'in_progress' | 'done'
+
+/**
+ * One row of the shop's cut list. Flat on purpose — the tree says what the car
+ * is made of, this says what has to be made this week, and they are not the
+ * same list.
+ */
+/**
+ * A related link on a part: the part in Onshape, a vendor page, a bend table.
+ * The server allows http and https only — these become real hrefs.
+ */
+export interface MfgLink {
+  label: string | null
+  url: string
+}
+
+export interface MfgPart {
+  id: number
+  project_id: number
+  /** Meant to match the part's name in Onshape exactly. That string is the join. */
+  name: string
+  subsystem: string | null
+  status: MfgStatus
+  notes: string | null
+  assignee_id: number | null
+  links: MfgLink[]
+
+  /** The drawing. Its storage address is deliberately not exposed. */
+  has_drawing: boolean
+  drawing_filename: string | null
+  drawing_content_type: string | null
+  drawing_size_bytes: number | null
+  drawing_uploaded_at: string | null
 }
 
 export interface EffectiveTag {

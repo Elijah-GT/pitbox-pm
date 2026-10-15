@@ -1,6 +1,8 @@
 import type {
   Attachment,
   Member,
+  MfgPart,
+  MfgStatus,
   Milestone,
   DeleteResult,
   NodeDetail,
@@ -114,6 +116,8 @@ export const api = {
     title: string
     due_date: string
     detail?: string | null
+    priority?: Milestone['priority']
+    kind?: Milestone['kind']
     owner_id?: number | null
     node_id?: number | null
   }) => withJson<Milestone>('POST')('/api/milestones', payload),
@@ -124,11 +128,58 @@ export const api = {
    */
   updateMilestone: (
     id: number,
-    payload: Partial<Pick<Milestone, 'title' | 'due_date' | 'detail' | 'owner_id' | 'node_id' | 'done'>>,
+    payload: Partial<Pick<Milestone, 'title' | 'due_date' | 'detail' | 'priority' | 'kind' | 'owner_id' | 'node_id' | 'done'>>,
   ) => withJson<Milestone>('PATCH')(`/api/milestones/${id}`, payload),
 
   deleteMilestone: (id: number) =>
     request<void>(`/api/milestones/${id}`, { method: 'DELETE' }),
+
+  /** The shop's cut list for one tree, ordered by subsystem then name. */
+  listMfgParts: (projectId: number) =>
+    request<MfgPart[]>(`/api/mfg-parts?project_id=${projectId}`),
+
+  /** Admin only — deciding what gets made is planning. */
+  createMfgPart: (payload: {
+    project_id: number
+    name: string
+    subsystem?: string | null
+    status?: MfgStatus
+    notes?: string | null
+    assignee_id?: number | null
+  }) => withJson<MfgPart>('POST')('/api/mfg-parts', payload),
+
+  /** Any member: the person at the bandsaw marks it done and writes the notes. */
+  updateMfgPart: (
+    id: number,
+    payload: Partial<
+      Pick<MfgPart, 'name' | 'subsystem' | 'status' | 'notes' | 'assignee_id' | 'links'>
+    >,
+  ) => withJson<MfgPart>('PATCH')(`/api/mfg-parts/${id}`, payload),
+
+  deleteMfgPart: (id: number) =>
+    request<void>(`/api/mfg-parts/${id}`, { method: 'DELETE' }),
+
+  /**
+   * Attach or replace the drawing. PUT because there is exactly one.
+   * Do NOT set Content-Type — the browser has to add the multipart boundary.
+   */
+  uploadDrawing: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<MfgPart>(`/api/mfg-parts/${id}/drawing`, { method: 'PUT', body: form })
+  },
+
+  clearDrawing: (id: number) =>
+    request<MfgPart>(`/api/mfg-parts/${id}/drawing`, { method: 'DELETE' }),
+
+  /**
+   * Where to point an <img>, an <iframe> or a download link.
+   *
+   * Not a fetch: the browser loads this itself and decides whether to render
+   * or save from the response's Content-Disposition. `download` flips that.
+   */
+  drawingUrl: (id: number, download = false) =>
+    `/api/mfg-parts/${id}/drawing${download ? '?download=1' : ''}`,
 
   listProjects: () => request<ProjectSummary[]>('/api/projects'),
 

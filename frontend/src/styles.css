@@ -1307,6 +1307,10 @@ a {
 .tl-stat-soon {
   color: #f59e0b;
 }
+.tl-stat-sae {
+  color: var(--brand-dim);
+  font-weight: 600;
+}
 
 .tl-add {
   display: flex;
@@ -1482,11 +1486,46 @@ a {
   line-height: 1.25;
   overflow-wrap: anywhere;
 }
+.tl-label-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  /* Never wraps. The band's height comes from a constant that assumes this
+     label is a fixed height; a second line here clips the outermost flags. */
+  white-space: nowrap;
+  overflow: hidden;
+}
 .tl-label-date {
-  display: block;
   font-size: 0.68rem;
   color: var(--text-muted);
-  margin-top: 1px;
+  flex: none;
+}
+
+/* Three-character tags. Deliberately not colour-coded against the state
+   palette -- the left border already carries done/late/soon, and a second
+   colour system competing with it would make both harder to read. */
+.goal-tag {
+  font-family: var(--font-head);
+  font-size: 0.56rem;
+  letter-spacing: 0.6px;
+  line-height: 1.5;
+  text-transform: uppercase;
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  flex: none;
+}
+.goal-tag.prio-sae {
+  color: var(--brand-dim);
+  border-color: #5c1f28;
+  background: rgba(239, 43, 69, 0.12);
+  font-weight: 700;
+}
+.goal-tag.prio-critical {
+  color: #f59e0b;
+  border-color: #5a4312;
 }
 
 /* State is the whole point of the colour here, so it drives the dot and the
@@ -1499,6 +1538,20 @@ a {
 .tl-flag.state-soon .tl-dot { background: #f59e0b; }
 .tl-flag.state-soon .tl-label { border-left-color: #f59e0b; }
 .tl-flag.state-ahead .tl-dot { background: var(--accent); }
+
+/* A Baja SAE date is set by the organisation and cannot move. Marked by SHAPE
+   rather than colour -- colour already carries done/late/soon, and shape
+   survives both that and colour blindness. */
+.tl-flag.prio-sae .tl-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  left: -5px;
+}
+.tl-flag.prio-sae .tl-label {
+  border-top: 1px solid var(--brand);
+}
 .tl-flag.state-ahead .tl-label { border-left-color: var(--accent); }
 
 /* --- the list ------------------------------------------------------------ */
@@ -1524,6 +1577,22 @@ a {
 .tl-row.state-overdue { border-left-color: var(--danger); }
 .tl-row.state-soon { border-left-color: #f59e0b; }
 .tl-row.state-ahead { border-left-color: var(--accent); }
+/* Matches the flag: an SAE row is outlined rather than recoloured, so the
+   left border is still free to say done/late/soon. */
+.tl-row.prio-sae {
+  border-color: var(--brand);
+  border-left-color: inherit;
+  background: linear-gradient(0deg, rgba(239, 43, 69, 0.05), rgba(239, 43, 69, 0.05)),
+    var(--surface);
+}
+.tl-row.prio-sae.state-done { border-left-color: var(--ok); }
+.tl-row.prio-sae.state-overdue { border-left-color: var(--danger); }
+.tl-row.prio-sae.state-soon { border-left-color: #f59e0b; }
+.tl-row.prio-sae.state-ahead { border-left-color: var(--accent); }
+
+.tl-row-prio {
+  min-width: 118px;
+}
 
 .tl-row-title {
   flex: 1;
@@ -1548,7 +1617,369 @@ a {
   flex: none;
 }
 
+/* ===== The cut list (ShopView) ===== */
+/* Cards, not a tree and not a table: the drawing is the most useful thing
+   about a part, and it needs room to be looked at. */
+
+.shop {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.shop-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.shop-head h2 {
+  font-family: var(--font-head);
+  font-size: 1.05rem;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.shop-project {
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  letter-spacing: 0;
+  text-transform: none;
+  margin-left: 6px;
+}
+.shop-stats {
+  display: flex;
+  gap: 10px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+.shop-stat-warn {
+  color: #f59e0b;
+}
+
+.shop-add {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.shop-add .input:first-child {
+  flex: 1;
+  min-width: 220px;
+}
+
+.shop-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-head);
+  font-size: 0.78rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  padding-bottom: 6px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shop-cards {
+  display: grid;
+  /* auto-fill, not auto-fit: one part left in a subsystem should stay a card,
+     not stretch into a banner. */
+  grid-template-columns: repeat(auto-fill, minmax(236px, 1fr));
+  gap: 12px;
+}
+
+.shop-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.shop-card.status-todo { border-left-color: var(--text-muted); }
+.shop-card.status-in_progress { border-left-color: #f59e0b; }
+.shop-card.status-done { border-left-color: var(--ok); }
+.shop-card.status-done .shop-name { color: var(--text-dim); }
+
+/* --- the drawing --------------------------------------------------------- */
+
+.shop-thumb {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 100%;
+  height: 132px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  /* Drawings are black-on-white. A light plate keeps a transparent PNG from
+     vanishing into the dark theme. */
+  background: #f6f7f9;
+  cursor: pointer;
+  overflow: hidden;
+}
+.shop-thumb:hover {
+  border-color: var(--accent);
+}
+.shop-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+.shop-thumb-file {
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+.shop-thumb-file.not-viewable {
+  cursor: default;
+}
+.shop-filetype {
+  font-family: var(--font-head);
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+  color: var(--accent);
+}
+.shop-filename {
+  font-size: 0.72rem;
+  text-align: center;
+  overflow-wrap: anywhere;
+  /* Two lines at most, so every card in a row stays the same height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.shop-filesize {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+.shop-drawing-actions {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+
+.shop-dropzone {
+  width: 100%;
+  height: 132px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  padding: 10px;
+  cursor: pointer;
+}
+.shop-dropzone:hover,
+.shop-dropzone.over {
+  border-color: var(--accent);
+  color: var(--text-dim);
+}
+.shop-nodrawing {
+  height: 132px;
+  display: grid;
+  place-items: center;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+/* --- the fields ---------------------------------------------------------- */
+
+.shop-name {
+  font-weight: 600;
+}
+.shop-row {
+  display: flex;
+  gap: 6px;
+}
+.shop-row .input {
+  flex: 1;
+  min-width: 0;
+}
+.shop-notes {
+  min-height: 56px;
+  resize: vertical;
+}
+.shop-delete {
+  align-self: flex-start;
+}
+
+/* --- related links ------------------------------------------------------- */
+
+.shop-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.shop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  max-width: 100%;
+  padding: 2px 4px 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.72rem;
+}
+.shop-link a {
+  color: var(--accent);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 150px;
+}
+.shop-link a:hover {
+  text-decoration: underline;
+}
+.shop-link button {
+  background: none;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0 2px;
+}
+.shop-link button:hover {
+  color: var(--danger);
+}
+
+.shop-link-new {
+  background: none;
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.72rem;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.shop-link-new:hover {
+  border-color: var(--accent);
+  color: var(--text-dim);
+}
+
+.shop-link-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  width: 100%;
+}
+.shop-link-add .input {
+  flex: 1;
+  min-width: 110px;
+}
+
+/* --- the full-size viewer ------------------------------------------------ */
+
+.shop-viewer {
+  width: min(1400px, 100%);
+  max-height: min(92dvh, 1100px);
+  display: flex;
+  flex-direction: column;
+}
+.shop-viewer-actions {
+  display: flex;
+  gap: 6px;
+  /* Three buttons now. On a narrow window they wrap under the part name
+     rather than squeezing the heading to nothing. */
+  flex-wrap: wrap;
+}
+.shop-viewer-img {
+  width: 100%;
+  max-height: 78dvh;
+  object-fit: contain;
+  background: #f6f7f9;
+  border-radius: var(--radius-sm);
+}
+.shop-viewer-frame {
+  width: 100%;
+  height: 78dvh;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: #f6f7f9;
+}
+.shop-viewer-foot {
+  margin-top: 8px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+/* Full screen. This class is what actually fills the window, so it holds
+   whether or not the browser granted requestFullscreen -- the API is a bonus
+   on top, not the mechanism. */
+.modal-backdrop.is-full {
+  padding: 0;
+}
+.shop-viewer.is-full {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: 100%;
+  border-radius: 0;
+  /* .modal scrolls by default; here the drawing is sized to fit instead. */
+  overflow: hidden;
+}
+/* The drawing takes every pixel the heading and filename rows don't want.
+   min-height: 0 is load-bearing: without it a flex item refuses to shrink
+   below its content, and a tall PDF pushes the filename off the bottom. */
+.shop-viewer.is-full .shop-viewer-frame,
+.shop-viewer.is-full .shop-viewer-img {
+  flex: 1;
+  height: auto;
+  max-height: none;
+  min-height: 0;
+}
+
 @media (max-width: 720px) {
+  /* One card per row on a phone: two 236px cards do not fit, and a drawing
+     squeezed to 150px stops being a drawing. */
+  .shop {
+    padding: 10px 10px 16px;
+  }
+  .shop-cards {
+    grid-template-columns: 1fr;
+  }
+  .shop-stats {
+    margin-left: 0;
+    width: 100%;
+  }
+  .shop-add .input:first-child {
+    min-width: 0;
+    flex-basis: 100%;
+  }
+  .shop-viewer-frame,
+  .shop-viewer-img {
+    height: 60dvh;
+    max-height: 60dvh;
+  }
+
   /* The axis keeps its min-width and scrolls; the list below is the part you
      actually work in on a phone, so it stacks. */
   .timeline {

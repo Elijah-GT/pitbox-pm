@@ -1,4 +1,30 @@
-import type { Milestone } from '../api/types'
+import type { GoalKind, GoalPriority, Milestone } from '../api/types'
+
+/** Full names for the dropdowns. */
+export const PRIORITY_LABELS: Record<GoalPriority, string> = {
+  sae: 'Baja SAE deadline',
+  critical: 'Critical',
+  normal: 'Normal',
+  low: 'Low',
+}
+export const PRIORITY_ORDER = Object.keys(PRIORITY_LABELS) as GoalPriority[]
+
+export const KIND_LABELS: Record<GoalKind, string> = {
+  design: 'Design',
+  manufacturing: 'Manufacturing',
+  other: 'Other',
+}
+export const KIND_ORDER = Object.keys(KIND_LABELS) as GoalKind[]
+
+/** Short forms for the flags, where there is room for three characters. */
+export const PRIORITY_TAGS: Partial<Record<GoalPriority, string>> = {
+  sae: 'SAE',
+  critical: 'CRIT',
+}
+export const KIND_TAGS: Partial<Record<GoalKind, string>> = {
+  design: 'DES',
+  manufacturing: 'MFG',
+}
 
 /**
  * Laying dated goals out along a horizontal axis.
@@ -117,6 +143,8 @@ export interface Placed {
   side: 'above' | 'below'
   /** Which row out from the axis, so crowded dates do not overlap. */
   lane: number
+  /** Near the right-hand end, so the label grows left from its dot instead. */
+  atEnd: boolean
   state: GoalState
 }
 
@@ -126,6 +154,14 @@ export interface Placed {
  * roughly honest instead of drifting with the viewport.
  */
 const LABEL_PCT = 13
+
+/**
+ * Past this point along the axis a label is flipped to grow leftwards from its
+ * dot, so the last goal of the season does not hang off the end of the track.
+ * Shared with the component so the lane maths and the CSS cannot disagree --
+ * they did, and two labels in the same lane overlapped.
+ */
+export const AT_END_PCT = 85
 
 /**
  * Place every goal: alternating sides, then stacked into lanes so a cluster of
@@ -144,14 +180,20 @@ export function placeAll(milestones: Milestone[], span: Span, now: Date = today(
       const pct = positionOf(parseDay(milestone.due_date), span)
       const side: 'above' | 'below' = i % 2 === 0 ? 'above' : 'below'
 
+      // The span the LABEL covers, which is not the span from the dot: a
+      // flipped label sits to the left of its dot.
+      const atEnd = pct > AT_END_PCT
+      const left = atEnd ? pct - LABEL_PCT : pct
+      const right = left + LABEL_PCT
+
       const lanes = edges[side]
-      let lane = lanes.findIndex((right) => right <= pct)
+      let lane = lanes.findIndex((edge) => edge <= left)
       if (lane === -1) {
         lane = lanes.length
         lanes.push(0)
       }
-      lanes[lane] = pct + LABEL_PCT
+      lanes[lane] = right
 
-      return { milestone, pct, side, lane, state: goalState(milestone, now) }
+      return { milestone, pct, side, lane, atEnd, state: goalState(milestone, now) }
     })
 }

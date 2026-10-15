@@ -117,6 +117,32 @@ def save_stream(fileobj, *, declared_name: str) -> StoredBlob:
         tmp.unlink(missing_ok=True)
 
 
+def still_referenced(db, sha256: str) -> bool:
+    """Whether ANY row still points at these bytes.
+
+    Blobs are content-addressed, so the same drawing uploaded as a node
+    attachment and set as a manufacturing part's drawing is ONE file on disk.
+    Counting only the table you happen to be deleting from would unlink bytes
+    the other one still needs. Both delete paths go through here so the two
+    cannot drift apart.
+    """
+    # Local import: storage must not pull in the ORM at module load, or
+    # models -> storage -> models becomes a cycle the day models needs a helper.
+    from sqlalchemy import func, select
+
+    from .models import Attachment, MfgPart
+
+    attached = db.scalar(
+        select(func.count()).select_from(Attachment).where(Attachment.sha256 == sha256)
+    ) or 0
+    if attached:
+        return True
+    drawn = db.scalar(
+        select(func.count()).select_from(MfgPart).where(MfgPart.drawing_sha256 == sha256)
+    ) or 0
+    return drawn > 0
+
+
 def delete_blob_if_orphaned(sha256: str, still_referenced: bool) -> bool:
     """Remove a blob only when no attachment row points at it any more.
 

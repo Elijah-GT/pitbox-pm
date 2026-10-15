@@ -20,7 +20,7 @@ from sqlalchemy import select  # noqa: E402
 
 from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import Attachment  # noqa: E402
+from app.models import Attachment, MfgPart  # noqa: E402
 
 
 def main() -> int:
@@ -29,7 +29,14 @@ def main() -> int:
     args = parser.parse_args()
 
     with SessionLocal() as db:
+        # BOTH tables, not just attachments. Manufacturing parts keep their
+        # drawing in the same content-addressed store, so counting attachments
+        # alone would report every drawing as an orphan -- and --delete would
+        # then remove the lot.
         referenced = {row for row in db.scalars(select(Attachment.sha256))}
+        referenced |= {
+            row for row in db.scalars(select(MfgPart.drawing_sha256)) if row is not None
+        }
 
     blobs_root = settings.storage_dir / "blobs"
     if not blobs_root.exists():
