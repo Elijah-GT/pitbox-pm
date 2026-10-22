@@ -196,3 +196,108 @@ export interface DeleteResult {
   deleted_node_id: number
   deleted_count: number
 }
+
+/* ---------------------------------------------------------------- Learn */
+
+/** Which heading a Learn section sits under. */
+export type LearnGroup = 'library' | 'cad'
+
+/** Line art shown on a card until someone uploads a real render. */
+export type LearnIcon = 'gear' | 'spring' | 'wheel' | 'weld' | 'cube' | 'book'
+
+/** A page as it appears in a card's chips and the sidebar -- no body. */
+export interface LearnPageSummary {
+  id: number
+  section_id: number
+  title: string
+  position: number
+}
+
+export interface LearnSection {
+  id: number
+  title: string
+  summary: string | null
+  group: LearnGroup
+  icon: LearnIcon
+  position: number
+  /** The card's render, or null for the icon. */
+  image_url: string | null
+  pages: LearnPageSummary[]
+}
+
+/** One "CAD reference" card under a writeup. */
+export interface LearnReference {
+  title: string
+  url: string
+  description: string | null
+  /** A picture uploaded to the same section. */
+  image_id: number | null
+}
+
+export interface LearnPage {
+  id: number
+  section_id: number
+  title: string
+  /** Markdown, rendered by lib/markdown.ts. */
+  body: string
+  references: LearnReference[]
+  position: number
+  /** Sent back on save; a save against a newer version is refused (409). */
+  version: number
+  updated_at: string | null
+  updated_by_id: number | null
+  updated_by_name: string | null
+}
+
+export interface LearnImage {
+  id: number
+  url: string
+  filename: string
+}
+
+/* --------------------------------------------------------------- Orders */
+
+/**
+ * The life of a purchase request. The first five are the happy path in order;
+ * denied and cancelled are the two ways it ends without anything bought.
+ */
+export type OrderStatus =
+  | 'requested'
+  | 'approved'
+  | 'ordered'
+  | 'shipped'
+  | 'received'
+  | 'denied'
+  | 'cancelled'
+
+export interface OrderEvent {
+  status: OrderStatus
+  at: string
+  by: number | null
+  /** Copied in at the time, so it still reads right after someone leaves. */
+  by_name: string | null
+}
+
+export interface PurchaseRequest {
+  id: number
+  project_id: number
+  item: string
+  vendor: string | null
+  url: string | null
+  part_number: string | null
+  quantity: number
+  unit_cost_cents: number | null
+  /** quantity x unit price, or null when nobody has priced it -- never 0. */
+  total_cents: number | null
+  notes: string | null
+  subsystem: string | null
+  /** ISO calendar date, "2026-11-07". */
+  needed_by: string | null
+  status: OrderStatus
+  order_number: string | null
+  tracking_number: string | null
+  history: OrderEvent[]
+  requested_by_id: number | null
+  created_at: string
+  updated_at: string
+}

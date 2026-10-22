@@ -154,6 +154,16 @@ has to be able to mark a part ordered and set its cost without waiting on a
 lead — that is the daily job. What they cannot do is change the shape of the
 tree, because those are the actions that lose work.
 
+Two sections draw the line differently, each on purpose:
+
+- **Orders** is looser. Any member can *submit* a purchase request, and can
+  edit or cancel their own until a lead acts on it. Approving, denying,
+  ordering and shipping are for admins, because those spend the team's money.
+  Anyone can mark an order received, since whoever opened the box knows.
+- **Learn** is stricter. Everyone reads it, but only admins change it —
+  editing a page included — because it is the team's guidance, not a scratch
+  pad.
+
 Enforcement is one dependency on the router (`app/main.py`), not a check per
 endpoint, so a route added later is admin-only from the moment it exists. The
 member-writable routes are an explicit allowlist in `security.MEMBER_WRITABLE`;

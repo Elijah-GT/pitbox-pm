@@ -117,37 +117,55 @@ def save_stream(fileobj, *, declared_name: str) -> StoredBlob:
         tmp.unlink(missing_ok=True)
 
 
-def still_referenced(db, sha256: str) -> bool:
-    """Whether ANY row still points at these bytes.
+def blob_reference_columns():
+    """Every column that holds the address of a blob. THE list.
 
-    Blobs are content-addressed, so the same drawing uploaded as a node
-    attachment and set as a manufacturing part's drawing is ONE file on disk.
-    Counting only the table you happen to be deleting from would unlink bytes
-    the other one still needs. Both delete paths go through here so the two
-    cannot drift apart.
+    Blobs are content-addressed and shared: the same PDF attached to a node,
+    set as a shop drawing and pasted into a Learn page is ONE file on disk. So
+    anything that frees bytes has to ask every table that can point at them,
+    not only the one it happens to be deleting from.
+
+    This used to be written out twice -- in still_referenced() and again in
+    scripts/gc_blobs.py -- and the second copy is where it went wrong: the
+    collector only knew about attachments, so it would have reported every
+    shop drawing as an orphan. Both now read this, and a test fails if a model
+    grows a *sha256 column that is not listed here.
     """
     # Local import: storage must not pull in the ORM at module load, or
     # models -> storage -> models becomes a cycle the day models needs a helper.
+    from .models import Attachment, LearnImage, MfgPart
+
+    return (Attachment.sha256, MfgPart.drawing_sha256, LearnImage.sha256)
+
+
+def still_referenced(db, sha256: str) -> bool:
+    """Whether ANY row, in any table, still points at these bytes."""
     from sqlalchemy import func, select
 
-    from .models import Attachment, MfgPart
+    for column in blob_reference_columns():
+        found = db.scalar(
+            select(func.count()).select_from(column.class_).where(column == sha256)
+        )
+        if found:
+            return True
+    return False
 
-    attached = db.scalar(
-        select(func.count()).select_from(Attachment).where(Attachment.sha256 == sha256)
-    ) or 0
-    if attached:
-        return True
-    drawn = db.scalar(
-        select(func.count()).select_from(MfgPart).where(MfgPart.drawing_sha256 == sha256)
-    ) or 0
-    return drawn > 0
+
+def referenced_hashes(db) -> set[str]:
+    """Every blob address the database still uses -- what the collector keeps."""
+    from sqlalchemy import select
+
+    referenced: set[str] = set()
+    for column in blob_reference_columns():
+        referenced |= {h for h in db.scalars(select(column)) if h}
+    return referenced
 
 
 def delete_blob_if_orphaned(sha256: str, still_referenced: bool) -> bool:
-    """Remove a blob only when no attachment row points at it any more.
+    """Remove a blob only when nothing points at it any more.
 
-    Callers must pass the result of a COUNT over attachments -- deleting one
-    attachment must never delete bytes another node still relies on.
+    Callers must pass the result of still_referenced() -- deleting one row must
+    never delete bytes that another row, in any table, still relies on.
     """
     if still_referenced:
         return False

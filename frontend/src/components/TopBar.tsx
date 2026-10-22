@@ -2,15 +2,18 @@ import type { AuthMode } from '../api/client'
 import type { Member, ProjectSummary } from '../api/types'
 
 /**
- * The three sections of the app, over the same project: what the car is made
- * of, when things are due, and what the shop has to make.
+ * The sections of the app. The first four are over the selected project: what
+ * the car is made of, when things are due, what the shop has to make, and
+ * what has to be bought. Learn is team-wide and ignores the project picker.
  */
-export type Workspace = 'breakdown' | 'timeline' | 'shop'
+export type Workspace = 'breakdown' | 'timeline' | 'shop' | 'orders' | 'learn'
 
 const WORKSPACE_LABELS: Record<Workspace, string> = {
   breakdown: 'Parts',
   timeline: 'Timeline',
   shop: 'Shop',
+  orders: 'Orders',
+  learn: 'Learn',
 }
 const WORKSPACE_ORDER = Object.keys(WORKSPACE_LABELS) as Workspace[]
 

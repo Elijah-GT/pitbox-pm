@@ -20,6 +20,11 @@ Sourcing = Literal["make", "buy", "na"]
 GoalPriority = Literal["sae", "critical", "normal", "low"]
 GoalKind = Literal["design", "manufacturing", "other"]
 MfgStatus = Literal["todo", "in_progress", "done"]
+LearnGroup = Literal["library", "cad"]
+LearnIcon = Literal["gear", "spring", "wheel", "weld", "cube", "book"]
+OrderStatus = Literal[
+    "requested", "approved", "ordered", "shipped", "received", "denied", "cancelled",
+]
 AttachmentKind = Literal[
     "datasheet", "cad", "drawing", "pcb", "firmware", "analysis", "photo", "other"
 ]
@@ -352,12 +357,22 @@ class MfgLink(BaseModel):
     @field_validator("url")
     @classmethod
     def _only_web_urls(cls, v: str) -> str:
-        url = v.strip()
-        # Compared on a lowered copy but stored as typed: some paths are
-        # case-sensitive, and Onshape document ids are mixed case.
-        if not url.lower().startswith(("http://", "https://")):
-            raise ValueError("A link must start with http:// or https://")
-        return url
+        return _web_url(v)
+
+
+def _web_url(value: str) -> str:
+    """Trim, and refuse anything that is not an http(s) URL.
+
+    Shared by every model whose URL ends up as a real href -- shop links, Learn
+    CAD references, purchase-request product pages -- so the rule that keeps
+    "javascript:" out is written once rather than three slightly different times.
+    """
+    url = value.strip()
+    # Compared on a lowered copy but stored as typed: some paths are
+    # case-sensitive, and Onshape document ids are mixed case.
+    if not url.lower().startswith(("http://", "https://")):
+        raise ValueError("A link must start with http:// or https://")
+    return url
 
 
 def _blank_to_none(value: str | None) -> str | None:
@@ -477,3 +492,259 @@ class FilterResult(BaseModel):
     matched_ids: list[int]
     visible_ids: list[int]
     matched_count: int
+
+
+def _required(value: str, what: str) -> str:
+    """Trim a required text field, and refuse one that is only whitespace --
+    min_length=1 alone lets "   " through as a title."""
+    text = value.strip()
+    if not text:
+        raise ValueError(f"{what} cannot be blank.")
+    return text
+
+
+def _optional_url(value: str | None) -> str | None:
+    """An optional link: blank means none, anything else must be http(s)."""
+    if value is None or not value.strip():
+        return None
+    return _web_url(value)
+
+
+# --- learn -------------------------------------------------------------------
+
+class LearnReference(BaseModel):
+    """One "CAD reference" card under a writeup: a picture, a title, a line of
+    description, and a link to the model in Onshape."""
+
+    title: str = Field(min_length=1, max_length=120)
+    url: str = Field(min_length=1, max_length=2000)
+    description: str | None = Field(default=None, max_length=300)
+    # A LearnImage in the same section; checked by the router.
+    image_id: int | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str) -> str:
+        return _required(v, "A reference title")
+
+    @field_validator("description")
+    @classmethod
+    def _tidy_description(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+    @field_validator("url")
+    @classmethod
+    def _only_web_urls(cls, v: str) -> str:
+        return _web_url(v)
+
+
+class LearnSectionIn(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    summary: str | None = Field(default=None, max_length=600)
+    group: LearnGroup = "library"
+    icon: LearnIcon = "book"
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str) -> str:
+        return _required(v, "A section title")
+
+    @field_validator("summary")
+    @classmethod
+    def _tidy_summary(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+
+class LearnSectionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    summary: str | None = Field(default=None, max_length=600)
+    group: LearnGroup | None = None
+    icon: LearnIcon | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "A section title")
+
+    @field_validator("summary")
+    @classmethod
+    def _tidy_summary(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+
+class LearnMove(BaseModel):
+    """Swap with the neighbour above or below. One step at a time, because
+    that is all an up/down button needs and it cannot leave a gap."""
+
+    direction: Literal["up", "down"]
+
+
+class LearnPageSummary(BaseModel):
+    """A page as it appears in a card's chips and the sidebar: no body."""
+
+    model_config = ORM
+    id: int
+    section_id: int
+    title: str
+    position: int = 0
+
+
+class LearnSectionOut(BaseModel):
+    model_config = ORM
+    id: int
+    title: str
+    summary: str | None = None
+    group: LearnGroup = "library"
+    icon: LearnIcon = "book"
+    position: int = 0
+    # Where the card's render is served from, or None for the line-art icon.
+    image_url: str | None = None
+    pages: list[LearnPageSummary] = Field(default_factory=list)
+
+
+class LearnLibraryOut(BaseModel):
+    """The whole Learn index in one call. It is a few dozen rows -- not worth a
+    request per card."""
+
+    sections: list[LearnSectionOut]
+
+
+class LearnPageIn(BaseModel):
+    section_id: int
+    title: str = Field(min_length=1, max_length=160)
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str) -> str:
+        return _required(v, "A page title")
+
+
+class LearnPageUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=160)
+    # Markdown. Capped generously -- a long writeup is a few thousand words.
+    body: str | None = Field(default=None, max_length=100_000)
+    references: list[LearnReference] | None = Field(default=None, max_length=24)
+    # The version the editor started from. The app always sends it, so two
+    # people editing the same page cannot silently overwrite each other; it is
+    # optional so a deliberate script can still write without one.
+    base_version: int | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "A page title")
+
+
+class LearnPageOut(BaseModel):
+    model_config = ORM
+    id: int
+    section_id: int
+    title: str
+    body: str = ""
+    references: list[LearnReference] = Field(default_factory=list)
+    position: int = 0
+    version: int = 1
+    updated_at: datetime | None = None
+    updated_by_id: int | None = None
+    # Resolved by the router, so "last edited by" survives without the client
+    # needing the roster.
+    updated_by_name: str | None = None
+
+
+class LearnImageOut(BaseModel):
+    id: int
+    url: str
+    filename: str
+
+
+# --- orders ------------------------------------------------------------------
+
+class _OrderFields(BaseModel):
+    """What a requester fills in. Shared by create and edit so the two cannot
+    disagree about what a valid request looks like."""
+
+    vendor: str | None = Field(default=None, max_length=120)
+    url: str | None = Field(default=None, max_length=2000)
+    part_number: str | None = Field(default=None, max_length=120)
+    # Capped as typo guards: nobody orders 100,001 bolts or a $1M part, but
+    # an extra zero or two is easy to type and silently wrecks the totals.
+    unit_cost_cents: int | None = Field(default=None, ge=0, le=100_000_000)
+    notes: str | None = Field(default=None, max_length=4000)
+    subsystem: str | None = Field(default=None, max_length=80)
+    needed_by: date | None = None
+    # Filled in by whoever places the order. The router stops a member setting
+    # these: they describe an order a lead placed, not the request itself.
+    order_number: str | None = Field(default=None, max_length=120)
+    tracking_number: str | None = Field(default=None, max_length=120)
+
+    @field_validator(
+        "vendor", "part_number", "notes", "subsystem", "order_number", "tracking_number"
+    )
+    @classmethod
+    def _tidy(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+    @field_validator("url")
+    @classmethod
+    def _only_web_urls(cls, v: str | None) -> str | None:
+        return _optional_url(v)
+
+
+class PurchaseRequestIn(_OrderFields):
+    project_id: int
+    item: str = Field(min_length=1, max_length=200)
+    quantity: int = Field(default=1, ge=1, le=100_000)
+    # Leads only. A member's request always starts as "requested" -- the
+    # router refuses anything else from them rather than quietly ignoring it.
+    status: OrderStatus | None = None
+
+    @field_validator("item")
+    @classmethod
+    def _tidy_item(cls, v: str) -> str:
+        return _required(v, "What you want bought")
+
+
+class PurchaseRequestUpdate(_OrderFields):
+    """A partial edit. project_id is absent on purpose, as for shop parts."""
+
+    item: str | None = Field(default=None, min_length=1, max_length=200)
+    quantity: int | None = Field(default=None, ge=1, le=100_000)
+    status: OrderStatus | None = None
+
+    @field_validator("item")
+    @classmethod
+    def _tidy_item(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "What you want bought")
+
+
+class OrderEvent(BaseModel):
+    """One entry in a request's history: it became `status`, at `at`, by `by`."""
+
+    status: OrderStatus
+    at: datetime
+    by: int | None = None
+    by_name: str | None = None
+
+
+class PurchaseRequestOut(BaseModel):
+    model_config = ORM
+    id: int
+    project_id: int
+    item: str
+    vendor: str | None = None
+    url: str | None = None
+    part_number: str | None = None
+    quantity: int = 1
+    unit_cost_cents: int | None = None
+    # quantity x unit price, or None when unpriced -- never 0 for "unknown".
+    total_cents: int | None = None
+    notes: str | None = None
+    subsystem: str | None = None
+    needed_by: date | None = None
+    status: OrderStatus = "requested"
+    order_number: str | None = None
+    tracking_number: str | None = None
+    history: list[OrderEvent] = Field(default_factory=list)
+    requested_by_id: int | None = None
+    created_at: datetime
+    updated_at: datetime

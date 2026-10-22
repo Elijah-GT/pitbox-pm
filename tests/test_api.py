@@ -1796,22 +1796,22 @@ def test_a_drawing_shared_with_a_node_attachment_survives(client, project):
 
 def test_the_blob_collector_counts_drawings_too(client, project):
     """scripts/gc_blobs.py builds its 'referenced' set from the database. If it
-    only looked at attachments, --delete would wipe every drawing."""
+    only looked at attachments, --delete would wipe every drawing.
+
+    Calls the same function the script calls, rather than re-deriving the set
+    here -- a copy of the logic in a test passes even when the script is wrong.
+    """
     import hashlib
 
-    from sqlalchemy import select
-
+    from app import storage
     from app.database import SessionLocal
-    from app.models import Attachment, MfgPart
 
     made = _part(client, project["id"], "Collector check")
     _put_drawing(client, made["id"], "gc.pdf", b"%PDF gc bytes")
     sha = hashlib.sha256(b"%PDF gc bytes").hexdigest()
 
     with SessionLocal() as db:
-        referenced = {r for r in db.scalars(select(Attachment.sha256))}
-        referenced |= {r for r in db.scalars(select(MfgPart.drawing_sha256)) if r is not None}
-    assert sha in referenced
+        assert sha in storage.referenced_hashes(db)
 
 
 def test_a_member_can_work_the_list_but_not_add_or_delete_parts(anon, client, project):
@@ -2006,3 +2006,555 @@ def test_the_migration_adds_priority_and_kind_to_an_existing_timeline():
 
     # Idempotent: booting twice must not try to add them again.
     assert run_migrations(engine) == []
+
+
+# --- the blob store: one list of who points at it ------------------------------
+
+def test_every_blob_column_is_known_to_the_collector():
+    """A table that stores a blob address but is missing from
+    storage.blob_reference_columns() gets its files deleted by the collector
+    and by any delete path that frees bytes. This is how the GC once came
+    close to wiping every shop drawing -- so make adding a fourth table
+    without registering it fail loudly, here, instead of in production."""
+    from app import storage
+    from app.models import Base as ModelBase
+
+    found = {
+        f"{mapper.class_.__name__}.{col.key}"
+        for mapper in ModelBase.registry.mappers
+        for col in mapper.column_attrs
+        if col.key.endswith("sha256")
+    }
+    known = {f"{c.class_.__name__}.{c.key}" for c in storage.blob_reference_columns()}
+    assert found == known, f"unregistered blob columns: {found - known}"
+
+
+# --- Learn ---------------------------------------------------------------------
+
+def _library(client):
+    r = client.get("/api/learn")
+    assert r.status_code == 200, r.text
+    return r.json()["sections"]
+
+
+def _section_named(client, title):
+    matches = [s for s in _library(client) if s["title"] == title]
+    assert len(matches) == 1, f"expected one {title!r}, got {len(matches)}"
+    return matches[0]
+
+
+def _learn_section(client, title, **kw):
+    r = client.post("/api/learn/sections", json={"title": title, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _learn_page(client, section_id, title):
+    r = client.post("/api/learn/pages", json={"section_id": section_id, "title": title})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _learn_image(client, section_id, data, filename="photo.png", page_id=None, headers=None):
+    form = {"section_id": str(section_id)}
+    if page_id is not None:
+        form["page_id"] = str(page_id)
+    return client.post("/api/learn/images", data=form, headers=headers or {},
+                       files={"file": (filename, data)})
+
+
+def test_learn_starts_with_the_four_topics_and_the_cad_guide(client):
+    sections = _library(client)
+    library = [s["title"] for s in sections if s["group"] == "library"]
+    # [:4] -- later tests add their own sections to the library.
+    assert library[:4] == ["Drivetrain", "Suspension", "Steering", "Welding"]
+    cad = [s for s in sections if s["group"] == "cad"]
+    assert [s["title"] for s in cad] == ["Onshape standards"]
+    # The guide is read in order, so its chapters come back in order.
+    assert [p["title"] for p in cad[0]["pages"]][:2] == ["Why we standardize", "Naming parts"]
+    # Every card has something to click.
+    assert all(s["pages"] for s in sections)
+
+
+def test_the_starter_library_is_written_once_not_on_every_boot(client):
+    """Every TestClient here runs the app's startup again, which is exactly
+    what a deploy or restart does. Seeding on every boot would put a second
+    Welding card on the page each time -- or bring back a section a lead had
+    deliberately deleted."""
+    with TestClient(app):
+        pass
+    with TestClient(app) as again:
+        from app.database import SessionLocal
+        from app.models import LearnSection
+
+        with SessionLocal() as db:
+            welding = db.query(LearnSection).filter(LearnSection.title == "Welding").count()
+        assert welding == 1
+        assert again.get("/api/health").status_code == 200
+
+
+def _fresh_db():
+    """An empty in-memory database with every table, for start-up logic that
+    has to be tested from a clean slate rather than the shared test file."""
+    import sqlalchemy
+    from sqlalchemy.orm import sessionmaker
+
+    from app.models import Base as ModelBase
+
+    engine = sqlalchemy.create_engine("sqlite://")
+    ModelBase.metadata.create_all(engine)
+    return sessionmaker(bind=engine)()
+
+
+def test_a_boot_that_died_before_seeding_still_seeds_next_time():
+    """The bug this design exists for: a start-up created the Learn tables,
+    then failed (missing Cloudflare settings) before seeding. Keying the seed
+    on "the table is new" would have left that library empty forever. Tables
+    present with no marker is exactly that state -- it must still seed."""
+    from app.learn_seed import seed_learn_library_once
+
+    with _fresh_db() as db:
+        assert seed_learn_library_once(db) == 5
+        assert seed_learn_library_once(db) == 0
+
+
+def test_emptying_the_library_does_not_bring_the_starter_back():
+    from app.learn_seed import seed_learn_library_once
+    from app.models import LearnSection
+
+    with _fresh_db() as db:
+        seed_learn_library_once(db)
+        for section in db.query(LearnSection).all():
+            db.delete(section)
+        db.commit()
+
+        assert seed_learn_library_once(db) == 0
+        assert db.query(LearnSection).count() == 0
+
+
+def test_a_library_the_team_started_is_never_mixed_with_the_starter():
+    from app.learn_seed import SEEDED_KEY, seed_learn_library_once
+    from app.models import AppMeta, LearnSection
+
+    with _fresh_db() as db:
+        db.add(LearnSection(title="Our own Brakes page", group="library", icon="book"))
+        db.commit()
+
+        assert seed_learn_library_once(db) == 0
+        assert [s.title for s in db.query(LearnSection)] == ["Our own Brakes page"]
+        assert db.get(AppMeta, SEEDED_KEY) is not None
+
+
+def test_the_library_outlines_say_they_are_outlines(client):
+    """The topic pages are scaffolds, not the team's procedures. A page that
+    reads as authoritative but was invented is worse than an empty one."""
+    welding = _section_named(client, "Welding")
+    first = client.get(f"/api/learn/pages/{welding['pages'][0]['id']}").json()
+    assert "Starter outline" in first["body"]
+
+
+def test_a_page_save_records_who_and_bumps_the_version(client):
+    section = _learn_section(client, "Brakes test")
+    page = _learn_page(client, section["id"], "Bleeding")
+    assert page["version"] == 1
+
+    saved = client.patch(f"/api/learn/pages/{page['id']}", json={
+        "body": "## Steps\n\n1. Fill the reservoir", "base_version": 1,
+    })
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["version"] == 2
+    assert body["updated_by_name"] == "Test Admin"
+    assert body["body"].startswith("## Steps")
+
+
+def test_saving_over_someone_elses_newer_edit_is_refused(client):
+    """Two people open the welding page; one saves. The second save must not
+    silently wipe the first -- it gets a 409 and the page keeps the first."""
+    section = _learn_section(client, "Conflict test")
+    page = _learn_page(client, section["id"], "Shared page")
+
+    first = client.patch(f"/api/learn/pages/{page['id']}",
+                         json={"body": "first edit", "base_version": 1})
+    assert first.status_code == 200
+
+    stale = client.patch(f"/api/learn/pages/{page['id']}",
+                         json={"body": "second edit, started from v1", "base_version": 1})
+    assert stale.status_code == 409
+    assert "NOT saved" in stale.json()["detail"]
+    assert client.get(f"/api/learn/pages/{page['id']}").json()["body"] == "first edit"
+
+
+def test_members_can_read_learn_but_not_change_any_of_it(anon, client):
+    """Learn is the team's guidance, so it is the one section where a member's
+    only access is reading -- no editing a page, no new picture on a card, no
+    reordering. Every write route is tried as a real non-admin."""
+    section = _learn_section(client, "Read-only test", summary="Lead's words")
+    page = _learn_page(client, section["id"], "Guidance")
+    written = client.patch(f"/api/learn/pages/{page['id']}",
+                           json={"body": "How we do it.", "base_version": 1}).json()
+    picture = _learn_image(client, section["id"], b"lead's picture", page_id=page["id"]).json()
+
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("reader@school.edu")}
+
+        # Reading: all of it.
+        assert anon.get("/api/learn", headers=h).status_code == 200
+        assert anon.get(f"/api/learn/pages/{page['id']}", headers=h).json()["body"] == "How we do it."
+        assert anon.get(picture["url"], headers=h).status_code == 200
+
+        # Changing: none of it -- all eleven write routes.
+        sid, pid = section["id"], page["id"]
+        attempts = {
+            "edit page": anon.patch(f"/api/learn/pages/{pid}", headers=h,
+                                    json={"body": "my version", "base_version": written["version"]}),
+            "edit section": anon.patch(f"/api/learn/sections/{sid}", headers=h,
+                                       json={"summary": "my words"}),
+            "move page": anon.post(f"/api/learn/pages/{pid}/move", headers=h,
+                                   json={"direction": "down"}),
+            "move section": anon.post(f"/api/learn/sections/{sid}/move", headers=h,
+                                      json={"direction": "down"}),
+            "upload picture": _learn_image(anon, sid, b"member picture", page_id=pid, headers=h),
+            "set card picture": anon.put(f"/api/learn/sections/{sid}/image", headers=h,
+                                         files={"file": ("card.png", b"member card")}),
+            "clear card picture": anon.delete(f"/api/learn/sections/{sid}/image", headers=h),
+            "add section": anon.post("/api/learn/sections", headers=h, json={"title": "Mine"}),
+            "add page": anon.post("/api/learn/pages", headers=h,
+                                  json={"section_id": sid, "title": "Mine"}),
+            "delete page": anon.delete(f"/api/learn/pages/{pid}", headers=h),
+            "delete section": anon.delete(f"/api/learn/sections/{sid}", headers=h),
+        }
+        allowed = {name: r.status_code for name, r in attempts.items() if r.status_code != 403}
+        assert not allowed, f"a member got through: {allowed}"
+
+    # ...and nothing underneath moved.
+    after = client.get(f"/api/learn/pages/{page['id']}").json()
+    assert after["body"] == "How we do it."
+    assert after["version"] == written["version"]
+    assert _section_named(client, "Read-only test")["summary"] == "Lead's words"
+
+
+def test_no_learn_write_is_on_the_member_allowlist():
+    """The structural half of the rule above. Putting a Learn route into
+    security.MEMBER_WRITABLE would quietly open it to every member; this fails
+    the moment anyone does, whatever the route."""
+    from app.routers import learn
+    from app.security import MEMBER_WRITABLE
+
+    writes = {
+        (method, route.path)
+        for route in learn.router.routes
+        for method in route.methods
+        if method not in ("GET", "HEAD")
+    }
+    # 6 for sections, 4 for pages, 1 for pictures. If this count changes, a
+    # route was added or removed -- make sure the test above tries it.
+    assert len(writes) == 11, sorted(writes)
+    assert not writes & MEMBER_WRITABLE
+
+
+def test_moving_a_page_reorders_its_chapters(client):
+    section = _learn_section(client, "Order test")
+    a = _learn_page(client, section["id"], "A")
+    _learn_page(client, section["id"], "B")
+    c = _learn_page(client, section["id"], "C")
+
+    r = client.post(f"/api/learn/pages/{c['id']}/move", json={"direction": "up"})
+    assert r.status_code == 200
+    mine = next(s for s in r.json()["sections"] if s["id"] == section["id"])
+    assert [p["title"] for p in mine["pages"]] == ["A", "C", "B"]
+    assert [p["position"] for p in mine["pages"]] == [0, 1, 2]
+
+    # Already at the top: a no-op, not an error.
+    r = client.post(f"/api/learn/pages/{a['id']}/move", json={"direction": "up"})
+    assert r.status_code == 200
+    mine = next(s for s in r.json()["sections"] if s["id"] == section["id"])
+    assert [p["title"] for p in mine["pages"]] == ["A", "C", "B"]
+
+
+@pytest.mark.parametrize("bad_url", [
+    "javascript:alert(document.cookie)",
+    "data:text/html,<script>alert(1)</script>",
+    "cad.onshape.com/documents/abc",
+])
+def test_a_cad_reference_must_be_an_http_link(client, bad_url):
+    """References render as real hrefs, so the same rule as shop links."""
+    section = _learn_section(client, f"Ref URL test {bad_url[:12]}")
+    page = _learn_page(client, section["id"], "Refs")
+    r = client.patch(f"/api/learn/pages/{page['id']}", json={
+        "references": [{"title": "Bad", "url": bad_url}],
+    })
+    assert r.status_code == 422
+    assert client.get(f"/api/learn/pages/{page['id']}").json()["references"] == []
+
+
+def test_a_reference_picture_has_to_come_from_the_same_section(client):
+    """Otherwise deleting the other section would leave a broken picture."""
+    home = _learn_section(client, "Ref image home")
+    other = _learn_section(client, "Ref image other")
+    page = _learn_page(client, home["id"], "Refs")
+    theirs = _learn_image(client, other["id"], b"other section picture").json()
+    ours = _learn_image(client, home["id"], b"home section picture").json()
+
+    ref = {"title": "Rack mount", "url": "https://cad.onshape.com/documents/x"}
+    wrong = client.patch(f"/api/learn/pages/{page['id']}",
+                         json={"references": [{**ref, "image_id": theirs["id"]}]})
+    assert wrong.status_code == 400
+
+    right = client.patch(f"/api/learn/pages/{page['id']}",
+                         json={"references": [{**ref, "image_id": ours["id"]}]})
+    assert right.status_code == 200, right.text
+    assert right.json()["references"][0]["image_id"] == ours["id"]
+
+
+@pytest.mark.parametrize("filename", ["diagram.svg", "notes.html", "tube.pdf", "noext"])
+def test_learn_only_takes_pictures(client, filename):
+    """Served inline on this origin, so SVG and HTML -- which can carry script
+    -- are refused, and the bytes are never written."""
+    import hashlib
+
+    from app import storage
+
+    data = f"not a picture {filename}".encode()
+    section = _learn_section(client, f"Picture check {filename}")
+    r = _learn_image(client, section["id"], data, filename=filename)
+    assert r.status_code == 415
+    assert not storage.blob_path(hashlib.sha256(data).hexdigest()).exists()
+
+
+def test_a_learn_picture_is_served_inline_and_cached(client):
+    section = _learn_section(client, "Serve check")
+    made = _learn_image(client, section["id"], b"\x89PNG served bytes", filename="a.png").json()
+    assert made["url"] == f"/api/learn/images/{made['id']}"
+
+    r = client.get(made["url"])
+    assert r.status_code == 200
+    assert r.content == b"\x89PNG served bytes"
+    assert r.headers["content-type"] == "image/png"
+    assert r.headers["x-content-type-options"] == "nosniff"
+    assert "immutable" in r.headers["cache-control"]
+    assert "private" in r.headers["cache-control"]
+
+
+def test_a_new_card_picture_frees_the_old_one(client):
+    import hashlib
+
+    from app import storage
+
+    section = _learn_section(client, "Card swap")
+    one = client.put(f"/api/learn/sections/{section['id']}/image",
+                     files={"file": ("one.png", b"card picture one")})
+    assert one.status_code == 200
+    assert one.json()["image_url"]
+
+    two = client.put(f"/api/learn/sections/{section['id']}/image",
+                     files={"file": ("two.jpg", b"card picture two")})
+    assert two.status_code == 200
+    assert two.json()["image_url"] != one.json()["image_url"]
+    assert not storage.blob_path(hashlib.sha256(b"card picture one").hexdigest()).exists()
+    assert storage.blob_path(hashlib.sha256(b"card picture two").hexdigest()).exists()
+
+    cleared = client.delete(f"/api/learn/sections/{section['id']}/image")
+    assert cleared.json()["image_url"] is None
+    assert not storage.blob_path(hashlib.sha256(b"card picture two").hexdigest()).exists()
+
+
+def test_deleting_a_section_takes_its_pages_and_pictures(client):
+    import hashlib
+
+    from app import storage
+
+    section = _learn_section(client, "Doomed section")
+    page = _learn_page(client, section["id"], "Doomed page")
+    _learn_image(client, section["id"], b"doomed picture", page_id=page["id"])
+
+    assert client.delete(f"/api/learn/sections/{section['id']}").status_code == 204
+    assert client.get(f"/api/learn/pages/{page['id']}").status_code == 404
+    assert all(s["id"] != section["id"] for s in _library(client))
+    assert not storage.blob_path(hashlib.sha256(b"doomed picture").hexdigest()).exists()
+
+
+def test_a_learn_picture_shared_with_a_drawing_survives(client, project):
+    """The content-addressed trap again, across a third table: the same file
+    as a shop drawing and a Learn picture is ONE blob. Deleting the Learn page
+    must not take the drawing's bytes with it."""
+    import hashlib
+
+    from app import storage
+
+    shared = b"\x89PNG one file, two homes"
+    sha = hashlib.sha256(shared).hexdigest()
+
+    part = _part(client, project["id"], "Shared picture part")
+    assert _put_drawing(client, part["id"], "shared.png", shared, "image/png").status_code == 200
+
+    section = _learn_section(client, "Shared picture section")
+    page = _learn_page(client, section["id"], "Shared picture page")
+    assert _learn_image(client, section["id"], shared, page_id=page["id"]).status_code == 201
+
+    assert client.delete(f"/api/learn/pages/{page['id']}").status_code == 204
+    assert storage.blob_path(sha).exists(), "deleting a Learn page deleted a shop drawing"
+    assert client.get(f"/api/mfg-parts/{part['id']}/drawing").status_code == 200
+
+
+# --- Orders --------------------------------------------------------------------
+
+def _order(c, project_id, item, headers=None, **kw):
+    r = c.post("/api/purchase-requests", headers=headers or {},
+               json={"project_id": project_id, "item": item, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def _set(c, request_id, headers=None, **fields):
+    return c.patch(f"/api/purchase-requests/{request_id}", headers=headers or {}, json=fields)
+
+
+def test_anyone_can_ask_for_something_to_be_bought(anon, client, project):
+    """The whole point of the list: a member submits, and the request records
+    who asked from the signed-in identity, not from anything they typed."""
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("asker@school.edu")}
+        me = anon.get("/api/auth/me", headers=h).json()
+        made = _order(anon, project["id"], "Brake line fittings", headers=h,
+                      vendor="McMaster-Carr", part_number="5182K113",
+                      quantity=4, unit_cost_cents=1275,
+                      url="https://www.mcmaster.com/5182K113/",
+                      notes="Front brake lines", needed_by="2026-11-07")
+
+    assert made["status"] == "requested"
+    assert made["requested_by_id"] == me["id"]
+    assert made["total_cents"] == 4 * 1275
+    assert made["needed_by"] == "2026-11-07"
+    assert [e["status"] for e in made["history"]] == ["requested"]
+    assert made["history"][0]["by_name"] == me["name"]
+
+
+def test_a_member_cannot_slip_in_an_approved_request(anon, project):
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("sneaky@school.edu")}
+        for extra in ({"status": "approved"}, {"status": "ordered"},
+                      {"tracking_number": "1Z999"}, {"order_number": "PO-1"}):
+            r = anon.post("/api/purchase-requests", headers=h,
+                          json={"project_id": project["id"], "item": "Shocks", **extra})
+            assert r.status_code == 403, extra
+
+
+def test_you_can_change_your_own_request_until_a_lead_acts_on_it(anon, client, project):
+    with cloudflare_mode():
+        mine = {JWT_HEADER: make_token("owner@school.edu")}
+        theirs = {JWT_HEADER: make_token("bystander@school.edu")}
+        made = _order(anon, project["id"], "Rod ends", headers=mine, quantity=8)
+
+        fixed = _set(anon, made["id"], mine, quantity=10, unit_cost_cents=899)
+        assert fixed.status_code == 200, fixed.text
+        assert fixed.json()["total_cents"] == 8990
+
+        assert _set(anon, made["id"], theirs, quantity=1).status_code == 403
+
+    assert _set(client, made["id"], status="approved").status_code == 200
+
+    with cloudflare_mode():
+        locked = _set(anon, made["id"], mine, quantity=99)
+        assert locked.status_code == 403
+        assert "locked" in locked.json()["detail"]
+
+
+def test_approving_and_ordering_are_for_leads(anon, client, project):
+    made = _order(client, project["id"], "CVT belt")
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("eager@school.edu")}
+        for status in ("approved", "denied", "ordered", "shipped"):
+            r = _set(anon, made["id"], h, status=status)
+            assert r.status_code == 403, status
+        assert _set(anon, made["id"], h, tracking_number="1Z123").status_code == 403
+        assert anon.delete(f"/api/purchase-requests/{made['id']}", headers=h).status_code == 403
+
+
+def test_whoever_opens_the_box_can_mark_it_received(anon, client, project):
+    """Not just the requester and not just a lead: anyone on the team."""
+    made = _order(client, project["id"], "Bearings")
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("unboxer@school.edu")}
+        # Not before it has been ordered -- "received" on a bare request
+        # would skip the lead's approval entirely.
+        assert _set(anon, made["id"], h, status="received").status_code == 403
+
+    assert _set(client, made["id"], status="approved").status_code == 200
+    assert _set(client, made["id"], status="ordered", order_number="PO-77").status_code == 200
+
+    with cloudflare_mode():
+        got = _set(anon, made["id"], h, status="received")
+        assert got.status_code == 200, got.text
+        assert got.json()["status"] == "received"
+
+
+def test_you_can_withdraw_your_own_request(anon, client, project):
+    with cloudflare_mode():
+        mine = {JWT_HEADER: make_token("withdrawer@school.edu")}
+        other = {JWT_HEADER: make_token("not-the-owner@school.edu")}
+        made = _order(anon, project["id"], "Spare tie rods", headers=mine)
+        assert _set(anon, made["id"], other, status="cancelled").status_code == 403
+        done = _set(anon, made["id"], mine, status="cancelled")
+        assert done.status_code == 200
+        assert done.json()["status"] == "cancelled"
+
+
+def test_every_status_change_is_written_down(client, project):
+    made = _order(client, project["id"], "Fox shocks", quantity=2, unit_cost_cents=45000)
+    for status in ("approved", "ordered", "shipped", "received"):
+        assert _set(client, made["id"], status=status).status_code == 200
+    # Setting the same status again is not a new event.
+    final = _set(client, made["id"], status="received").json()
+
+    assert [e["status"] for e in final["history"]] == [
+        "requested", "approved", "ordered", "shipped", "received",
+    ]
+    assert all(e["by_name"] == "Test Admin" for e in final["history"])
+    stamps = [e["at"] for e in final["history"]]
+    assert stamps == sorted(stamps)
+
+
+def test_an_unpriced_request_has_no_total_rather_than_zero(client, project):
+    """$0 would quietly make the budget look healthier than it is."""
+    made = _order(client, project["id"], "Something, price unknown", quantity=3)
+    assert made["unit_cost_cents"] is None
+    assert made["total_cents"] is None
+
+
+@pytest.mark.parametrize("bad", [
+    {"url": "javascript:alert(1)"},
+    {"quantity": 0},
+    {"unit_cost_cents": -5},
+    {"status": "lost_in_the_mail"},
+    {"item": "   "},
+])
+def test_a_bogus_request_is_refused(client, project, bad):
+    r = client.post("/api/purchase-requests",
+                    json={"project_id": project["id"], "item": "Thing", **bad})
+    assert r.status_code == 422, bad
+
+
+def test_a_blank_link_means_no_link(client, project):
+    made = _order(client, project["id"], "No link", url="   ", vendor="")
+    assert made["url"] is None
+    assert made["vendor"] is None
+
+
+def test_clearing_a_required_field_is_a_422_not_a_crash(client, project):
+    made = _order(client, project["id"], "Required check")
+    assert _set(client, made["id"], item=None).status_code == 422
+    assert _set(client, made["id"], quantity=None).status_code == 422
+
+
+def test_deleting_a_project_takes_its_orders_with_it(client):
+    doomed = client.post("/api/projects", json={"name": "Doomed orders car", "template": "blank"})
+    pid = doomed.json()["id"]
+    made = _order(client, pid, "Orphan-to-be")
+    assert client.delete(f"/api/projects/{pid}").status_code == 204
+
+    from app.database import SessionLocal
+    from app.models import PurchaseRequest
+
+    with SessionLocal() as db:
+        assert db.get(PurchaseRequest, made["id"]) is None

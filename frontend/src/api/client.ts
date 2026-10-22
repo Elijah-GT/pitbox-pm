@@ -1,13 +1,21 @@
 import type {
   Attachment,
+  LearnGroup,
+  LearnIcon,
+  LearnImage,
+  LearnPage,
+  LearnReference,
+  LearnSection,
   Member,
   MfgPart,
   MfgStatus,
   Milestone,
   DeleteResult,
   NodeDetail,
+  OrderStatus,
   ProjectOut,
   ProjectSummary,
+  PurchaseRequest,
   Status,
   Tag,
   TreeNode,
@@ -240,4 +248,126 @@ export const api = {
 
   deleteAttachment: (id: number) =>
     request<void>(`/api/attachments/${id}`, { method: 'DELETE' }),
+
+  /* ------------------------------------------------------------- Learn */
+  // Team-wide, not per tree: no project_id anywhere below.
+
+  /** Every section with its page titles -- the whole Learn index. */
+  getLearn: () => request<{ sections: LearnSection[] }>('/api/learn'),
+
+  /** Admin only. */
+  createLearnSection: (payload: {
+    title: string
+    summary?: string | null
+    group: LearnGroup
+    icon: LearnIcon
+  }) => withJson<LearnSection>('POST')('/api/learn/sections', payload),
+
+  /** Admin only, like every Learn write: these pages are team guidance. */
+  updateLearnSection: (
+    id: number,
+    payload: Partial<Pick<LearnSection, 'title' | 'summary' | 'group' | 'icon'>>,
+  ) => withJson<LearnSection>('PATCH')(`/api/learn/sections/${id}`, payload),
+
+  /** Swap with a neighbour. Returns the whole index, already reordered. */
+  moveLearnSection: (id: number, direction: 'up' | 'down') =>
+    withJson<{ sections: LearnSection[] }>('POST')(`/api/learn/sections/${id}/move`, { direction }),
+
+  /** Admin only. Takes its pages and pictures with it. */
+  deleteLearnSection: (id: number) =>
+    request<void>(`/api/learn/sections/${id}`, { method: 'DELETE' }),
+
+  /** The card's render. Do NOT set Content-Type -- the browser adds the boundary. */
+  setLearnSectionImage: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<LearnSection>(`/api/learn/sections/${id}/image`, { method: 'PUT', body: form })
+  },
+
+  clearLearnSectionImage: (id: number) =>
+    request<LearnSection>(`/api/learn/sections/${id}/image`, { method: 'DELETE' }),
+
+  getLearnPage: (id: number) => request<LearnPage>(`/api/learn/pages/${id}`),
+
+  /** Admin only. */
+  createLearnPage: (sectionId: number, title: string) =>
+    withJson<LearnPage>('POST')('/api/learn/pages', { section_id: sectionId, title }),
+
+  /**
+   * Save an edit. `base_version` is the version the editor opened; if someone
+   * else saved in between, this rejects with an ApiError whose status is 409
+   * and nothing is overwritten.
+   */
+  updateLearnPage: (
+    id: number,
+    payload: {
+      title?: string
+      body?: string
+      references?: LearnReference[]
+      base_version: number
+    },
+  ) => withJson<LearnPage>('PATCH')(`/api/learn/pages/${id}`, payload),
+
+  moveLearnPage: (id: number, direction: 'up' | 'down') =>
+    withJson<{ sections: LearnSection[] }>('POST')(`/api/learn/pages/${id}/move`, { direction }),
+
+  /** Admin only. */
+  deleteLearnPage: (id: number) => request<void>(`/api/learn/pages/${id}`, { method: 'DELETE' }),
+
+  /** A picture for a writeup or a reference card. Returns the URL to use. */
+  uploadLearnImage: (sectionId: number, file: File, pageId?: number) => {
+    const form = new FormData()
+    form.append('section_id', String(sectionId))
+    if (pageId != null) form.append('page_id', String(pageId))
+    form.append('file', file)
+    return request<LearnImage>('/api/learn/images', { method: 'POST', body: form })
+  },
+
+  /* ------------------------------------------------------------ Orders */
+
+  /** One tree's purchase requests, newest first. */
+  listOrders: (projectId: number) =>
+    request<PurchaseRequest[]>(`/api/purchase-requests?project_id=${projectId}`),
+
+  /** Any member. The server records who asked from the signed-in identity. */
+  createOrder: (payload: {
+    project_id: number
+    item: string
+    vendor?: string | null
+    url?: string | null
+    part_number?: string | null
+    quantity?: number
+    unit_cost_cents?: number | null
+    notes?: string | null
+    subsystem?: string | null
+    needed_by?: string | null
+  }) => withJson<PurchaseRequest>('POST')('/api/purchase-requests', payload),
+
+  /**
+   * Members: their own request while it waits, cancelling it, or marking an
+   * order received. Everything else is for leads -- the server says which.
+   */
+  updateOrder: (
+    id: number,
+    payload: Partial<
+      Pick<
+        PurchaseRequest,
+        | 'item'
+        | 'vendor'
+        | 'url'
+        | 'part_number'
+        | 'quantity'
+        | 'unit_cost_cents'
+        | 'notes'
+        | 'subsystem'
+        | 'needed_by'
+        | 'order_number'
+        | 'tracking_number'
+      >
+    > & { status?: OrderStatus },
+  ) => withJson<PurchaseRequest>('PATCH')(`/api/purchase-requests/${id}`, payload),
+
+  /** Admin only. Requesters withdraw by cancelling, which keeps the record. */
+  deleteOrder: (id: number) =>
+    request<void>(`/api/purchase-requests/${id}`, { method: 'DELETE' }),
 }

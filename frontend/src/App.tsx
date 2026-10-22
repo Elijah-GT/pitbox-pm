@@ -7,6 +7,8 @@ import { ContextMenu, type MenuTarget } from './components/ContextMenu'
 import { DetailPanel } from './components/DetailPanel'
 import { FilterBar } from './components/FilterBar'
 import { FlowView } from './components/FlowView'
+import { LearnView } from './components/LearnView'
+import { OrdersView } from './components/OrdersView'
 import { TeamPanel } from './components/TeamPanel'
 import { ShopView } from './components/ShopView'
 import { TimelineView } from './components/TimelineView'
@@ -29,6 +31,17 @@ import {
 import { seasonFromName } from './lib/format'
 import { ancestorIds, buildIndex } from './lib/tree'
 
+/**
+ * The Learn page in the URL: undefined when the URL is not a Learn link at
+ * all, null for the Learn index, or a page id. Learn is the one section with
+ * its own URLs, so "read the welding page" can be a link someone sends.
+ */
+function readLearnRoute(): number | null | undefined {
+  const m = /^#\/learn(?:\/page\/(\d+))?\/?$/.exec(window.location.hash)
+  if (!m) return undefined
+  return m[1] ? Number(m[1]) : null
+}
+
 export default function App() {
   const [projects, setProjects] = useState<ProjectSummary[]>([])
   const [projectId, setProjectId] = useState<number | null>(null)
@@ -49,7 +62,41 @@ export default function App() {
   // Which half of the app: the part tree, or the dated goals. The timeline is
   // project-wide and wants the full width, so it replaces the two-pane layout
   // rather than squeezing into the tree pane.
-  const [workspace, setWorkspace] = useState<Workspace>('breakdown')
+  const [workspace, setWorkspace] = useState<Workspace>(() =>
+    readLearnRoute() !== undefined ? 'learn' : 'breakdown',
+  )
+  const [learnPageId, setLearnPageId] = useState<number | null>(() => readLearnRoute() ?? null)
+
+  // The hash is the source of truth for Learn, so the browser's back button
+  // walks back through the pages you read -- and out of Learn altogether.
+  useEffect(() => {
+    const onHash = () => {
+      const route = readLearnRoute()
+      if (route === undefined) {
+        setWorkspace((w) => (w === 'learn' ? 'breakdown' : w))
+        return
+      }
+      setWorkspace('learn')
+      setLearnPageId(route)
+    }
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
+  }, [])
+
+  const goWorkspace = useCallback((next: Workspace) => {
+    setWorkspace(next)
+    if (next === 'learn') {
+      if (readLearnRoute() === undefined) window.location.hash = '#/learn'
+    } else if (readLearnRoute() !== undefined) {
+      // Replace rather than push: leaving Learn should not leave a history
+      // entry that drops you straight back into it.
+      window.history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+  }, [])
+
+  const openLearnPage = useCallback((id: number | null) => {
+    window.location.hash = id == null ? '#/learn' : `#/learn/page/${id}`
+  }, [])
   const [view, setView] = useState<'tree' | 'flow'>('tree')
   const [flowFocusId, setFlowFocusId] = useState<number | null>(null)
 
@@ -445,7 +492,7 @@ export default function App() {
         authMode={authMode}
         isAdmin={isAdmin}
         workspace={workspace}
-        onWorkspace={setWorkspace}
+        onWorkspace={goWorkspace}
         onSwitch={switchProject}
         onNew={() => void newProject()}
         onClone={() => void cloneProject()}
@@ -514,6 +561,40 @@ export default function App() {
 
       {workspace === 'shop' && (projectId == null || !tree) && (
         <p className="loading">No tree selected, so there is nothing to make yet.</p>
+      )}
+
+      {/* Orders belong to a tree, like the cut list: a season's budget is
+          that car's, and last year's orders stay with last year's tree. */}
+      {workspace === 'orders' && projectId != null && tree && (
+        <OrdersView
+          projectId={projectId}
+          projectName={tree.project.name}
+          subsystems={tree.nodes
+            .filter((n) => n.depth === 1)
+            .map((n) => n.name)
+            .sort((a, b) => a.localeCompare(b))}
+          members={tree.members}
+          currentUserId={currentUser?.id ?? null}
+          isAdmin={isAdmin}
+          onError={showError}
+          onToast={show}
+        />
+      )}
+
+      {workspace === 'orders' && (projectId == null || !tree) && (
+        <p className="loading">No tree selected, so there is nothing to order yet.</p>
+      )}
+
+      {/* Learn is the team's, not a tree's: it does not wait for a project.
+          No canEdit: it is guidance, so only admins change it. */}
+      {workspace === 'learn' && (
+        <LearnView
+          pageId={learnPageId}
+          onOpenPage={openLearnPage}
+          isAdmin={isAdmin}
+          onError={showError}
+          onToast={show}
+        />
       )}
 
       {workspace === 'breakdown' && (

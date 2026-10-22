@@ -33,10 +33,10 @@ router = APIRouter(prefix="/api/mfg-parts", tags=["manufacturing"])
 
 # Rendered in the browser rather than downloaded. Images are inert. PDF is here
 # because an Onshape drawing is almost always a PDF, and a cut list whose
-# drawings you cannot look at is just a spreadsheet -- but a PDF can carry
-# JavaScript, so the response also sets a sandbox CSP (see serve_drawing) which
-# both Chrome and Firefox honour for the built-in viewer. Anything else, from a
-# .dxf to a helpfully-renamed .html, downloads.
+# drawings you cannot look at is just a spreadsheet. A PDF can carry
+# JavaScript, and it is NOT sandboxed -- a sandbox stops Chrome's viewer from
+# rendering it at all; serve_drawing explains the trade-off and the real fix.
+# Anything else, from a .dxf to a helpfully-renamed .html, downloads.
 INLINE_TYPES = {
     "image/png",
     "image/jpeg",

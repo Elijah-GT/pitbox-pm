@@ -101,6 +101,32 @@ GOAL_KINDS = ("design", "manufacturing", "other")
 # wall of tape labels, not a workflow engine.
 MFG_STATUSES = ("todo", "in_progress", "done")
 
+# The two halves of the Learn page. "library" is topics you dip into --
+# drivetrain, suspension, welding. "cad" is how the team models the car, read
+# more like a guide. Same data either way; this only decides which heading a
+# section sits under.
+LEARN_GROUPS = ("library", "cad")
+
+# Line art shown on a section card until someone uploads a real render. A fixed
+# set rather than an upload so a brand-new section never looks broken.
+LEARN_ICONS = ("gear", "spring", "wheel", "weld", "cube", "book")
+
+# The life of a purchase request. The first five are the happy path in order;
+# the last two are the ways a request ends without anything being bought --
+# "denied" when a lead says no, "cancelled" when the requester withdraws it.
+ORDER_STATUSES = (
+    "requested",
+    "approved",
+    "ordered",
+    "shipped",
+    "received",
+    "denied",
+    "cancelled",
+)
+# Statuses where the request is finished with, one way or the other. Anything
+# else is still somebody's job.
+ORDER_CLOSED = frozenset({"received", "denied", "cancelled"})
+
 
 class Member(Base):
     """A person on the team: both the assignee list and the login account.
@@ -496,3 +522,221 @@ class Milestone(Base):
         # Every read is "this project's milestones, in date order".
         Index("ix_milestones_project_due", "project_id", "due_date"),
     )
+
+
+# --- Learn: the team's own reference library ---------------------------------
+
+class LearnSection(Base):
+    """One card on the Learn page: "Suspension", "Welding", "CAD best practices".
+
+    NOT scoped to a project. Everything else in the app belongs to one car;
+    this belongs to the team. How to TIG a cope joint does not change when you
+    start next season's tree, and cloning a project should not fork the
+    knowledge base into two copies that drift apart.
+
+    Content lives in the database, edited in the app, rather than as Markdown
+    files in the repo. Leads rotate every year, and the person fixing the
+    welding page next season should not need git, a terminal or a redeploy --
+    the same reason the admin list is managed in-app.
+
+    image_id points at a LearnImage but is deliberately NOT a foreign key.
+    LearnImage already points back here (section_id), and the two FKs together
+    are a cycle that SQLite's CREATE TABLE cannot express. The API keeps the
+    two consistent, and a dangling id serves a 404 rather than a crash.
+    """
+
+    __tablename__ = "learn_sections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(120), nullable=False)
+    # The one or two sentences under the title on the card.
+    summary: Mapped[str | None] = mapped_column(Text)
+    # Stored as section_group: GROUP is reserved in SQL, and a column named
+    # that works through the ORM but trips up anyone querying the file by hand.
+    group: Mapped[str] = mapped_column(
+        "section_group", String(20), nullable=False, default="library"
+    )
+    icon: Mapped[str] = mapped_column(String(20), nullable=False, default="book")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    image_id: Mapped[int | None] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    pages: Mapped[list["LearnPage"]] = relationship(
+        back_populates="section",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="LearnPage.position",
+    )
+
+
+class LearnPage(Base):
+    """A writeup inside a section, followed by its CAD references.
+
+    `body` is Markdown. It is rendered in the browser by a small parser that
+    builds React elements directly and never produces an HTML string, so
+    nothing typed here can become markup -- see frontend/src/lib/markdown.ts.
+
+    `references` is a JSON list of {title, url, description, image_id}: the
+    "CAD references" cards under the writeup. JSON rather than a child table
+    for the same reason as MfgPart.links -- nothing queries them on their own.
+
+    `version` goes up by one on every save. An editor sends back the version
+    it started from, and a save against a newer one is refused instead of
+    silently overwriting a teammate's hour of writing.
+    """
+
+    __tablename__ = "learn_pages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    section_id: Mapped[int] = mapped_column(
+        ForeignKey("learn_sections.id", ondelete="CASCADE"), nullable=False
+    )
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    references: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    updated_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("members.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    section: Mapped[LearnSection] = relationship(back_populates="pages")
+    updated_by: Mapped[Member | None] = relationship()
+
+    __table_args__ = (Index("ix_learn_pages_section", "section_id", "position"),)
+
+
+class LearnImage(Base):
+    """A picture used on the Learn pages: a card render, a photo in a writeup,
+    or the thumbnail on a CAD reference.
+
+    The bytes live in the shared content-addressed blob store, so this is the
+    third table that can reference a blob. storage.blob_reference_columns()
+    lists all of them, and both the delete path and scripts/gc_blobs.py read
+    that one list -- add a fourth table there or its files get collected.
+
+    Every image belongs to a section, so deleting a section takes its pictures
+    with it. page_id is set for images uploaded while editing a page, so
+    deleting just that page can free them too.
+    """
+
+    __tablename__ = "learn_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    section_id: Mapped[int] = mapped_column(
+        ForeignKey("learn_sections.id", ondelete="CASCADE"), nullable=False
+    )
+    page_id: Mapped[int | None] = mapped_column(ForeignKey("learn_pages.id", ondelete="CASCADE"))
+
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    uploaded_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("members.id", ondelete="SET NULL")
+    )
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+# --- Orders: parts the team wants bought -------------------------------------
+
+class PurchaseRequest(Base):
+    """Somebody needs something bought.
+
+    Scoped to a project, unlike Learn: a season's budget belongs to that car,
+    and last year's orders should stay with last year's tree rather than
+    padding this year's totals.
+
+    requested_by_id is set by the API from whoever is signed in. It is not a
+    field anyone can type, because "who asked for this" is the one fact the
+    approval step relies on.
+
+    `history` is a JSON list, one entry per status change:
+        [{"status": "approved", "at": "<ISO-8601>", "by": <member id>,
+          "by_name": "<their name at the time>"}]
+    The name is copied in, not just the id, so the record still reads right
+    after a member is removed from the roster. Nothing queries it, so it is a
+    column rather than a table -- same reasoning as MfgPart.links.
+
+    Money is integer cents, like Node.cost_cents, so totals never pick up
+    floating-point pennies.
+    """
+
+    __tablename__ = "purchase_requests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+
+    item: Mapped[str] = mapped_column(String(200), nullable=False)
+    vendor: Mapped[str | None] = mapped_column(String(120))
+    # The product page. http/https only, validated at the API boundary,
+    # because it renders as a real href.
+    url: Mapped[str | None] = mapped_column(String(2000))
+    # The vendor's own number -- a McMaster part number, a SKU.
+    part_number: Mapped[str | None] = mapped_column(String(120))
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    unit_cost_cents: Mapped[int | None] = mapped_column(Integer)
+    # Why it is needed. The single most useful thing for whoever approves it.
+    notes: Mapped[str | None] = mapped_column(Text)
+    # Free text, like MfgPart.subsystem: the UI suggests this car's own
+    # subsystem names, but shop consumables belong to none of them.
+    subsystem: Mapped[str | None] = mapped_column(String(80))
+    # A DATE, like Milestone.due_date: "needed by Friday" is a day, not an
+    # instant that lands on Thursday for anyone west of UTC.
+    needed_by: Mapped[date | None] = mapped_column(Date)
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="requested")
+    # Filled in by whoever places the order.
+    order_number: Mapped[str | None] = mapped_column(String(120))
+    tracking_number: Mapped[str | None] = mapped_column(String(120))
+    history: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    requested_by_id: Mapped[int | None] = mapped_column(
+        ForeignKey("members.id", ondelete="SET NULL")
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    project: Mapped[Project] = relationship()
+    requested_by: Mapped[Member | None] = relationship()
+
+    __table_args__ = (Index("ix_purchase_requests_project", "project_id", "status"),)
+
+    @property
+    def total_cents(self) -> int | None:
+        """Quantity times unit price, or None when nobody has priced it yet --
+        an unpriced request must not count as $0 in the budget."""
+        if self.unit_cost_cents is None:
+            return None
+        return self.unit_cost_cents * self.quantity
+
+
+class AppMeta(Base):
+    """Facts about this database itself, as key/value pairs.
+
+    It exists for one-time setup that must happen exactly once and survive a
+    crash. "Has the starter Learn library been written?" cannot be inferred
+    from whether its table exists: a boot that creates the tables and then
+    fails before seeding leaves them there, empty, and every later boot would
+    skip the seed for good. Writing a marker here in the SAME commit as the
+    seeded rows makes the two succeed or fail together.
+    """
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)

@@ -377,6 +377,18 @@ MEMBER_WRITABLE: frozenset[tuple[str, str]] = frozenset({
     ("PATCH", "/api/mfg-parts/{part_id}"),
     ("PUT", "/api/mfg-parts/{part_id}/drawing"),
     ("DELETE", "/api/mfg-parts/{part_id}/drawing"),
+    # Purchase requests -- the one place a member may CREATE something,
+    # because asking for a part to be bought is the entire point of the list.
+    # Editing is here too, but the router narrows it by row: your own request
+    # while it waits, or marking an order received. Approving, ordering and
+    # deleting are refused there, not here -- see app/routers/orders.py.
+    ("POST", "/api/purchase-requests"),
+    ("PATCH", "/api/purchase-requests/{request_id}"),
+    # Nothing under /api/learn is here, on purpose. The Learn pages are the
+    # team's guidance -- how we weld, how we name parts -- so changing them is
+    # for leads, the same as adding or deleting them. Every member can read
+    # them. Absent from this list means admin-only, so to open any of it back
+    # up, add the route here rather than loosening the router.
 })
 
 # Used by both guards below, because a member hitting either one has the same

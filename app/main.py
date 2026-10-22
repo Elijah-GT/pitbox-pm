@@ -24,7 +24,9 @@ from .config import BASE_DIR, settings
 from .database import SessionLocal, engine
 from .migrate import retire_dead_statuses, run_migrations
 from .models import Base, Member
-from .routers import attachments, auth, members, mfg, milestones, nodes, projects, tags
+from .routers import (
+    attachments, auth, learn, members, mfg, milestones, nodes, orders, projects, tags,
+)
 from .security import (
     count_admins,
     current_member_optional,
@@ -32,6 +34,7 @@ from .security import (
     require_write_access,
     validate_member_writable,
 )
+from .learn_seed import seed_learn_library_once
 from .seed import ensure_default_tags, seed_demo
 
 STATIC_DIR = BASE_DIR / "static"        # the original zero-build UI
@@ -71,6 +74,9 @@ async def lifespan(_app: FastAPI):
     with SessionLocal() as db:
         ensure_default_tags(db)
         seed_demo(db)  # no-op once any project exists
+        # Once per database, ever -- a committed marker, not "was the table
+        # just created", so a boot that dies half-way still seeds next time.
+        seed_learn_library_once(db)
         purge_expired_sessions(db)
 
         # A database with members but no admin is a locked instance: everyone
@@ -127,7 +133,8 @@ app.include_router(auth.router)
 # in, editing an existing part for any member, and adding/deleting/restructuring
 # for admins -- see security.MEMBER_WRITABLE for the exact line and why.
 PROTECTED = [projects.router, nodes.router, tags.router, attachments.router,
-             members.router, milestones.router, mfg.router]
+             members.router, milestones.router, mfg.router, orders.router,
+             learn.router]
 for _router in PROTECTED:
     app.include_router(_router, dependencies=[Depends(require_write_access)])
 

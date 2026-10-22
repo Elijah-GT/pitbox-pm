@@ -16,11 +16,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select  # noqa: E402
-
+from app import storage  # noqa: E402
 from app.config import settings  # noqa: E402
 from app.database import SessionLocal  # noqa: E402
-from app.models import Attachment, MfgPart  # noqa: E402
 
 
 def main() -> int:
@@ -29,14 +27,11 @@ def main() -> int:
     args = parser.parse_args()
 
     with SessionLocal() as db:
-        # BOTH tables, not just attachments. Manufacturing parts keep their
-        # drawing in the same content-addressed store, so counting attachments
-        # alone would report every drawing as an orphan -- and --delete would
-        # then remove the lot.
-        referenced = {row for row in db.scalars(select(Attachment.sha256))}
-        referenced |= {
-            row for row in db.scalars(select(MfgPart.drawing_sha256)) if row is not None
-        }
+        # Every table that can point at a blob, from the one list the delete
+        # path uses too. This script used to keep its own copy of that list,
+        # and a copy is exactly what goes stale: it once counted attachments
+        # alone, which would have reported every shop drawing as an orphan.
+        referenced = storage.referenced_hashes(db)
 
     blobs_root = settings.storage_dir / "blobs"
     if not blobs_root.exists():
