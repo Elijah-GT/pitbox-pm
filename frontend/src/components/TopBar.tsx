@@ -1,12 +1,14 @@
 import type { AuthMode } from '../api/client'
-import type { Member, ProjectSummary } from '../api/types'
+import type { Member } from '../api/types'
+import { Countdown } from './Countdown'
+import { Menu, MenuHeading, MenuItem, MenuSeparator } from './Menu'
 
 /**
- * The sections of the app. The first four are over the selected project: what
- * the car is made of, when things are due, what the shop has to make, and
- * what has to be bought. Learn is team-wide and ignores the project picker.
+ * The sections of the app. The first four are over the tree chosen in Parts:
+ * what the car is made of, when things are due, what the shop has to make,
+ * and what has to be bought. Learn and Resources are team-wide, with no tree.
  */
-export type Workspace = 'breakdown' | 'timeline' | 'shop' | 'orders' | 'learn'
+export type Workspace = 'breakdown' | 'timeline' | 'shop' | 'orders' | 'learn' | 'resources'
 
 const WORKSPACE_LABELS: Record<Workspace, string> = {
   breakdown: 'Parts',
@@ -14,32 +16,41 @@ const WORKSPACE_LABELS: Record<Workspace, string> = {
   shop: 'Shop',
   orders: 'Orders',
   learn: 'Learn',
+  resources: 'Resources',
 }
 const WORKSPACE_ORDER = Object.keys(WORKSPACE_LABELS) as Workspace[]
 
 interface Props {
-  projects: ProjectSummary[]
-  projectId: number | null
   currentUser: Member | null
   authMode: AuthMode
-  /** Admin. Controls that add, delete or restructure are hidden without it. */
   isAdmin: boolean
   /** Which section of the app is on screen. */
   workspace: Workspace
   onWorkspace: (next: Workspace) => void
-  onSwitch: (id: number) => void
-  onNew: () => void
-  onClone: () => void
-  onDelete: () => void
   onEditName: () => void
   onManageTeam: () => void
   onSignOut: () => void
+  onError: (err: unknown) => void
+  onToast: (message: string) => void
 }
 
+/**
+ * Where you are, who you are, and how long is left -- nothing else.
+ *
+ * It used to carry the tree picker and every tree action as well, which made
+ * it the most crowded row in the app and put tree controls on screens that
+ * have no tree. Those now live at the top of Parts (TreeBar); the rarely used
+ * account actions live behind your name.
+ */
 export function TopBar({
-  projects, projectId, currentUser, authMode, isAdmin, workspace, onWorkspace,
-  onSwitch, onNew, onClone, onDelete, onEditName, onManageTeam, onSignOut,
+  currentUser, authMode, isAdmin, workspace, onWorkspace, onEditName, onManageTeam, onSignOut,
+  onError, onToast,
 }: Props) {
+  // Under Cloudflare Access a name starts life as the email's local part. The
+  // unset state is flagged on the button itself, so a teammate showing as
+  // "W1234567" sees it is fixable without opening anything.
+  const unnamed = currentUser?.name_confirmed === false
+
   return (
     <header className="topbar">
       <div className="brand">
@@ -59,147 +70,68 @@ export function TopBar({
         </span>
       </div>
 
-      <select
-        className="input"
-        aria-label="Select project"
-        value={projectId ?? ''}
-        onChange={(e) => onSwitch(Number(e.target.value))}
-      >
-        {/* The node count is here on purpose. Every tree built from the standard
-            template has identical subsystem names, so two different trees look
-            the same until you expand them — switching between them, or creating
-            a new one, otherwise reads as a rename. The count is the one thing
-            that visibly differs. */}
-        {projects.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.season ? `${p.name} (${p.season})` : p.name} · {p.node_count}{' '}
-            {p.node_count === 1 ? 'node' : 'nodes'}
-          </option>
-        ))}
-      </select>
-
-      {/* Sections over the same project, so this sits next to the project
-          picker rather than inside any one of them. */}
-      <div className="segmented workspace-switch" role="group" aria-label="Workspace">
+      <nav className="workspace-switch" aria-label="Sections">
         {WORKSPACE_ORDER.map((w) => (
           <button
             key={w}
             type="button"
             className={workspace === w ? 'active' : ''}
-            aria-pressed={workspace === w}
+            aria-current={workspace === w ? 'page' : undefined}
             onClick={() => onWorkspace(w)}
           >
             {WORKSPACE_LABELS[w]}
           </button>
         ))}
-      </div>
+      </nav>
 
       <div className="topbar-actions">
-        {/* Hidden rather than disabled for everyone who is not an admin. A row
-            of greyed-out buttons reads as "this app is broken for me"; showing
-            only what you can actually do reads as a normal, smaller app. The
-            server refuses these regardless -- see app/security.py. */}
-        {isAdmin && (
-          <>
-            <button type="button" className="btn" onClick={onNew} title="Create a new tree">
-              + New Tree
-            </button>
-            <button
-              type="button"
-              className="btn"
-              onClick={onClone}
-              title="Start next year from this car"
-              disabled={projectId == null}
-            >
-              Clone
-            </button>
-          </>
-        )}
+        {/* Waits for /api/auth/me, like the account button: an admin's
+            "set it" control must not flash up for members while loading. */}
+        {currentUser && <Countdown isAdmin={isAdmin} onError={onError} onToast={onToast} />}
 
-        {/* Export stays for everyone: it is a GET, and a member who can read
-            the tree on screen can obviously have it as a file. */}
-        <a
-          className="btn"
-          href={projectId == null ? '#' : `/api/projects/${projectId}/export.csv`}
-          title="Download the BOM as CSV"
-        >
-          Export CSV
-        </a>
-
-        {isAdmin && (
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={onManageTeam}
-              title="Who can change things"
-            >
-              Team
-            </button>
-            {/* Sits after the everyday actions and is styled as a danger
-                control, so it does not sit next to "Clone" looking like another
-                routine button. The handler makes you type the tree's name --
-                there is no undo. */}
-            <button
-              type="button"
-              className="btn btn-danger"
-              onClick={onDelete}
-              disabled={projectId == null}
-              title="Permanently delete the selected tree"
-            >
-              Delete tree
-            </button>
-          </>
-        )}
-
-        {/* Says why the buttons above are missing, so a member does not file
-            it as a bug or go looking for a broken permission. It does NOT say
-            "view only" -- a member can edit every part they can see, and
-            telling them otherwise would stop them trying.
-
-            Gated on currentUser, not just on isAdmin: until /api/auth/me comes
-            back we do not know who this is, and an admin should not watch a
-            role badge appear and then vanish on every page load. */}
-        {currentUser && !isAdmin && authMode !== 'none' && (
-          <span
-            className="role-badge"
-            title="You can edit any part. Adding, deleting and managing trees is for team leads."
-          >
-            Member
-          </span>
-        )}
-
+        {/* Only once /api/auth/me has answered: until then we do not know who
+            this is, and the button should not appear and then change. */}
         {currentUser && (
-          // Clickable, because under Cloudflare Access this starts life as
-          // whatever the email local part was. The unset state is flagged so a
-          // teammate showing as "W1234567" is obviously fixable, not permanent.
-          <button
-            type="button"
-            className={`whoami${currentUser.name_confirmed === false ? ' unnamed' : ''}`}
-            title={
-              currentUser.name_confirmed === false
-                ? 'This name came from your email — click to set your real name'
-                : `${currentUser.email ?? ''} — click to change your display name`
+          <Menu
+            buttonClassName={`whoami${unnamed ? ' unnamed' : ''}`}
+            title={unnamed ? 'This name came from your email — set your real name' : 'Your account'}
+            label={
+              <>
+                <span className="whoami-name">{currentUser.name}</span>
+                {unnamed && <span className="count">set name</span>}
+                {isAdmin && <span className="admin-pip">admin</span>}
+                <span className="whoami-caret" aria-hidden="true">
+                  ▾
+                </span>
+              </>
             }
-            onClick={onEditName}
           >
-            {currentUser.name}
-            {currentUser.name_confirmed === false && <span className="count">set name</span>}
-            {currentUser.is_admin && <span className="admin-pip">admin</span>}
-          </button>
-        )}
-        {/* auth_mode=none has nothing to sign out of. Under Cloudflare Access
-            the session belongs to Cloudflare, so the button hands off to their
-            logout endpoint rather than pretending the app owns it. */}
-        {authMode !== 'none' && (
-          <button
-            type="button"
-            className="btn btn-ghost"
-            onClick={onSignOut}
-            title={authMode === 'cloudflare' ? 'Signs you out of Cloudflare Access' : undefined}
-          >
-            Sign out
-          </button>
+            <MenuHeading>
+              <strong>{currentUser.name}</strong>
+              {currentUser.email && <span>{currentUser.email}</span>}
+              {/* Says what your role can do, so a member who finds no Delete
+                  button does not file it as a bug. It does NOT say "view
+                  only" -- members edit parts every day. */}
+              {authMode !== 'none' && (
+                <span className="menu-role">
+                  {isAdmin
+                    ? 'Admin: you can also add, delete and manage trees, approve orders and edit Learn.'
+                    : 'Member: you can edit parts, goals and the shop list, and request orders.'}
+                </span>
+              )}
+            </MenuHeading>
+            <MenuItem onClick={onEditName}>{unnamed ? 'Set your name…' : 'Change display name…'}</MenuItem>
+            {isAdmin && <MenuItem onClick={onManageTeam}>Team & admins…</MenuItem>}
+            {/* auth_mode=none has nothing to sign out of. Under Cloudflare
+                Access the session belongs to Cloudflare, so this hands off to
+                their logout endpoint rather than pretending the app owns it. */}
+            {authMode !== 'none' && (
+              <>
+                <MenuSeparator />
+                <MenuItem onClick={onSignOut}>Sign out</MenuItem>
+              </>
+            )}
+          </Menu>
         )}
       </div>
     </header>

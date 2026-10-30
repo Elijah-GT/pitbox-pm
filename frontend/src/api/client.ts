@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  Countdown,
   LearnGroup,
   LearnIcon,
   LearnImage,
@@ -16,6 +17,8 @@ import type {
   ProjectOut,
   ProjectSummary,
   PurchaseRequest,
+  Resource,
+  ResourceKind,
   Status,
   Tag,
   TreeNode,
@@ -370,4 +373,48 @@ export const api = {
   /** Admin only. Requesters withdraw by cancelling, which keeps the record. */
   deleteOrder: (id: number) =>
     request<void>(`/api/purchase-requests/${id}`, { method: 'DELETE' }),
+
+  /* --------------------------------------------------------- Resources */
+  // Team-wide: no project id. Anyone adds; the finder or an admin changes it.
+
+  listResources: () => request<Resource[]>('/api/resources'),
+
+  createResource: (payload: {
+    title: string
+    url?: string | null
+    kind?: ResourceKind
+    topic?: string | null
+    notes?: string | null
+  }) => withJson<Resource>('POST')('/api/resources', payload),
+
+  updateResource: (
+    id: number,
+    payload: Partial<Pick<Resource, 'title' | 'url' | 'kind' | 'topic' | 'notes'>>,
+  ) => withJson<Resource>('PATCH')(`/api/resources/${id}`, payload),
+
+  deleteResource: (id: number) => request<void>(`/api/resources/${id}`, { method: 'DELETE' }),
+
+  /** Attach or replace the file. Do NOT set Content-Type -- the browser adds the boundary. */
+  uploadResourceFile: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return request<Resource>(`/api/resources/${id}/file`, { method: 'PUT', body: form })
+  },
+
+  clearResourceFile: (id: number) =>
+    request<Resource>(`/api/resources/${id}/file`, { method: 'DELETE' }),
+
+  /** For a link or an <iframe>, not a fetch. `download` forces a save. */
+  resourceFileUrl: (id: number, download = false) =>
+    `/api/resources/${id}/file${download ? '?download=1' : ''}`,
+
+  /* --------------------------------------------------------- Countdown */
+
+  getCountdown: () => request<Countdown>('/api/countdown'),
+
+  /** Admin only. `at` must carry a timezone -- send an ISO instant. */
+  setCountdown: (payload: { label: string; at: string }) =>
+    withJson<Countdown>('PUT')('/api/countdown', payload),
+
+  clearCountdown: () => request<void>('/api/countdown', { method: 'DELETE' }),
 }

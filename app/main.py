@@ -25,7 +25,8 @@ from .database import SessionLocal, engine
 from .migrate import retire_dead_statuses, run_migrations
 from .models import Base, Member
 from .routers import (
-    attachments, auth, learn, members, mfg, milestones, nodes, orders, projects, tags,
+    attachments, auth, countdown, learn, members, mfg, milestones, nodes, orders,
+    projects, resources, tags,
 )
 from .security import (
     count_admins,
@@ -134,7 +135,7 @@ app.include_router(auth.router)
 # for admins -- see security.MEMBER_WRITABLE for the exact line and why.
 PROTECTED = [projects.router, nodes.router, tags.router, attachments.router,
              members.router, milestones.router, mfg.router, orders.router,
-             learn.router]
+             learn.router, resources.router, countdown.router]
 for _router in PROTECTED:
     app.include_router(_router, dependencies=[Depends(require_write_access)])
 

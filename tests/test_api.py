@@ -2558,3 +2558,203 @@ def test_deleting_a_project_takes_its_orders_with_it(client):
 
     with SessionLocal() as db:
         assert db.get(PurchaseRequest, made["id"]) is None
+
+
+# --- Resources -----------------------------------------------------------------
+
+def _resource(c, title, headers=None, **kw):
+    r = c.post("/api/resources", headers=headers or {}, json={"title": title, **kw})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_anyone_can_add_a_resource_and_it_says_who_found_it(anon):
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("researcher@school.edu")}
+        me = anon.get("/api/auth/me", headers=h).json()
+        made = _resource(anon, "Team 42 design report", headers=h,
+                         url="https://example.edu/baja-report.pdf", kind="report",
+                         topic="Suspension", notes="Good **A-arm** analysis.")
+        listed = anon.get("/api/resources", headers=h).json()
+
+    assert made["added_by_id"] == me["id"]
+    assert made["added_by_name"] == me["name"]
+    assert made["kind"] == "report"
+    assert any(r["id"] == made["id"] for r in listed)
+
+
+def test_you_can_change_what_you_found_but_not_a_teammates(anon, client):
+    """Adding is everyone's job; editing or removing someone else's find is
+    not. Their own, or any if you are an admin."""
+    with cloudflare_mode():
+        finder = {JWT_HEADER: make_token("finder@school.edu")}
+        other = {JWT_HEADER: make_token("someone-else@school.edu")}
+        mine = _resource(anon, "CVT tuning paper", headers=finder)
+        rid = mine["id"]
+
+        for attempt in (
+            anon.patch(f"/api/resources/{rid}", headers=other, json={"title": "Mine now"}),
+            anon.delete(f"/api/resources/{rid}", headers=other),
+            anon.put(f"/api/resources/{rid}/file", headers=other, files={"file": ("x.pdf", b"%PDF other")}),
+            anon.delete(f"/api/resources/{rid}/file", headers=other),
+        ):
+            assert attempt.status_code == 403, attempt.text
+
+        fixed = anon.patch(f"/api/resources/{rid}", headers=finder, json={"topic": "Drivetrain"})
+        assert fixed.status_code == 200 and fixed.json()["topic"] == "Drivetrain"
+
+        theirs = _resource(anon, "Somebody else's find", headers=other)
+
+    # An admin can tidy up anyone's.
+    assert client.patch(f"/api/resources/{theirs['id']}", json={"kind": "video"}).status_code == 200
+    assert client.delete(f"/api/resources/{theirs['id']}").status_code == 204
+
+    with cloudflare_mode():
+        assert anon.delete(f"/api/resources/{rid}", headers=finder).status_code == 204
+
+
+@pytest.mark.parametrize("bad", [
+    {"url": "javascript:alert(1)"},
+    {"url": "data:text/html,hi"},
+    {"kind": "rumour"},
+    {"title": "   "},
+])
+def test_a_bogus_resource_is_refused(client, bad):
+    r = client.post("/api/resources", json={"title": "Thing", **bad})
+    assert r.status_code == 422, bad
+
+
+def test_a_blank_resource_link_means_no_link(client):
+    made = _resource(client, "No link", url="  ", topic="")
+    assert made["url"] is None
+    assert made["topic"] is None
+
+
+def test_a_resource_file_is_shown_downloaded_and_freed(client):
+    import hashlib
+
+    from app import storage
+
+    data = b"%PDF resource file bytes"
+    sha = hashlib.sha256(data).hexdigest()
+    made = _resource(client, "With a PDF")
+    up = client.put(f"/api/resources/{made['id']}/file", files={"file": ("paper.pdf", data)})
+    assert up.status_code == 200, up.text
+    assert up.json()["has_file"] is True
+    assert "file_sha256" not in up.json()
+
+    shown = client.get(f"/api/resources/{made['id']}/file")
+    assert shown.headers["content-type"] == "application/pdf"
+    assert shown.headers["content-disposition"].startswith("inline")
+    assert shown.headers["x-content-type-options"] == "nosniff"
+    saved = client.get(f"/api/resources/{made['id']}/file?download=1")
+    assert saved.headers["content-disposition"].startswith("attachment")
+
+    assert client.delete(f"/api/resources/{made['id']}").status_code == 204
+    assert not storage.blob_path(sha).exists()
+
+
+def test_a_resource_file_shared_with_a_drawing_survives(client, project):
+    """The content-addressed trap, across a fourth table."""
+    import hashlib
+
+    from app import storage
+
+    shared = b"%PDF one paper, two homes"
+    part = _part(client, project["id"], "Shared with a resource")
+    assert _put_drawing(client, part["id"], "shared.pdf", shared).status_code == 200
+    made = _resource(client, "Same PDF as a drawing")
+    client.put(f"/api/resources/{made['id']}/file", files={"file": ("shared.pdf", shared)})
+
+    assert client.delete(f"/api/resources/{made['id']}").status_code == 204
+    assert storage.blob_path(hashlib.sha256(shared).hexdigest()).exists()
+    assert client.get(f"/api/mfg-parts/{part['id']}/drawing").status_code == 200
+
+
+# --- the doomsday countdown -----------------------------------------------------
+
+def test_the_countdown_is_unset_until_an_admin_sets_it(client):
+    from datetime import datetime, timezone
+
+    client.delete("/api/countdown")
+    assert client.get("/api/countdown").json() == {"label": None, "at": None, "doomsday": False}
+
+    # Set in Pacific time; stored and returned as the same instant in UTC.
+    r = client.put("/api/countdown", json={"label": "Competition", "at": "2027-05-01T08:00:00-07:00"})
+    assert r.status_code == 200, r.text
+    got = client.get("/api/countdown").json()
+    assert got["label"] == "Competition"
+    assert datetime.fromisoformat(got["at"]) == datetime(2027, 5, 1, 15, 0, tzinfo=timezone.utc)
+
+    assert client.delete("/api/countdown").status_code == 204
+    assert client.get("/api/countdown").json() == {"label": None, "at": None, "doomsday": False}
+
+
+def test_doomsday_is_how_one_site_shows_the_timer_not_a_default(client, monkeypatch):
+    """The big red Doomsday clock is this team's taste, switched on in its
+    fly.toml. Anyone else running the app gets the plain countdown."""
+    client.put("/api/countdown", json={"label": "Competition", "at": "2027-05-01T15:00:00Z"})
+    assert client.get("/api/countdown").json()["doomsday"] is False
+
+    monkeypatch.setattr(settings, "doomsday", True)
+    got = client.get("/api/countdown").json()
+    assert got["doomsday"] is True
+    assert got["label"] == "Competition"  # still said in the tooltip
+
+    # It is the site's look, so it holds with no date set too -- the admin's
+    # "set it" button should already say Doomsday.
+    client.delete("/api/countdown")
+    assert client.get("/api/countdown").json() == {"label": None, "at": None, "doomsday": True}
+
+
+def test_a_member_cannot_move_the_doomsday_clock(anon, client):
+    client.put("/api/countdown", json={"label": "Competition", "at": "2027-05-01T15:00:00Z"})
+    with cloudflare_mode():
+        h = {JWT_HEADER: make_token("clock-watcher@school.edu")}
+        assert anon.get("/api/countdown", headers=h).json()["label"] == "Competition"
+        assert anon.put("/api/countdown", headers=h,
+                        json={"label": "Later", "at": "2028-01-01T00:00:00Z"}).status_code == 403
+        assert anon.delete("/api/countdown", headers=h).status_code == 403
+    assert client.get("/api/countdown").json()["label"] == "Competition"
+    client.delete("/api/countdown")
+
+
+def test_a_countdown_without_a_timezone_is_refused(client):
+    """"8 am" with no zone would be read as 8 am UTC -- the wrong second for
+    everyone counting down to it."""
+    r = client.put("/api/countdown", json={"label": "Competition", "at": "2027-05-01T08:00:00"})
+    assert r.status_code == 422
+
+
+def test_timestamps_people_see_carry_their_timezone(client, project):
+    """SQLite returns timestamps with no zone. Sent like that, a browser reads
+    them as local time, and in the evening "added today" showed as tomorrow.
+    Every timestamp the UI puts in front of a person must say it is UTC."""
+    from datetime import datetime
+
+    def zoned(value):
+        return datetime.fromisoformat(value).utcoffset() is not None
+
+    resource = _resource(client, "Zone check")
+    assert zoned(resource["created_at"]), resource["created_at"]
+    assert zoned(client.get("/api/resources").json()[0]["updated_at"])
+
+    order = _order(client, project["id"], "Zone check")
+    assert zoned(order["created_at"]) and zoned(order["updated_at"])
+
+    section = _learn_section(client, "Zone check section")
+    page = _learn_page(client, section["id"], "Zone check page")
+    saved = client.patch(f"/api/learn/pages/{page['id']}", json={"body": "x", "base_version": 1}).json()
+    assert zoned(saved["updated_at"]), saved["updated_at"]
+    assert zoned(client.get(f"/api/learn/pages/{page['id']}").json()["updated_at"])
+
+
+def test_a_mangled_countdown_shows_as_unset_rather_than_breaking_the_page(client):
+    from app.database import SessionLocal
+    from app.models import AppMeta
+
+    with SessionLocal() as db:
+        db.merge(AppMeta(key="countdown", value="{not json"))
+        db.commit()
+    assert client.get("/api/countdown").json() == {"label": None, "at": None, "doomsday": False}
+    client.delete("/api/countdown")

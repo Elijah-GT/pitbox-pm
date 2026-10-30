@@ -301,3 +301,37 @@ export interface PurchaseRequest {
   created_at: string
   updated_at: string
 }
+
+/* ------------------------------------------------------------ Resources */
+
+export type ResourceKind = 'article' | 'paper' | 'report' | 'video' | 'datasheet' | 'forum' | 'other'
+
+/** Research someone found. Team-wide, like Learn -- no project id. */
+export interface Resource {
+  id: number
+  title: string
+  url: string | null
+  kind: ResourceKind
+  topic: string | null
+  /** Markdown, rendered by lib/markdown.ts. */
+  notes: string | null
+  added_by_id: number | null
+  added_by_name: string | null
+  created_at: string
+  updated_at: string
+  has_file: boolean
+  file_name: string | null
+  file_content_type: string | null
+  file_size_bytes: number | null
+}
+
+/* ------------------------------------------------------------ Countdown */
+
+/** The doomsday timer. Both null until an admin sets one. */
+export interface Countdown {
+  label: string | null
+  /** An ISO instant, e.g. "2027-05-01T15:00:00Z". */
+  at: string | null
+  /** This site shows it as the big red Doomsday clock (PITBOX_DOOMSDAY). */
+  doomsday: boolean
+}

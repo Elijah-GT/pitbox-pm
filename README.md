@@ -154,15 +154,19 @@ has to be able to mark a part ordered and set its cost without waiting on a
 lead — that is the daily job. What they cannot do is change the shape of the
 tree, because those are the actions that lose work.
 
-Two sections draw the line differently, each on purpose:
+A few sections draw the line differently, each on purpose:
 
 - **Orders** is looser. Any member can *submit* a purchase request, and can
   edit or cancel their own until a lead acts on it. Approving, denying,
   ordering and shipping are for admins, because those spend the team's money.
   Anyone can mark an order received, since whoever opened the box knows.
+- **Resources** is looser too. Any member can add research they found, and
+  can edit or remove what *they* added; admins can tidy up anyone's.
 - **Learn** is stricter. Everyone reads it, but only admins change it —
   editing a page included — because it is the team's guidance, not a scratch
   pad.
+- **The countdown** in the top bar is set by admins only. It is the team's
+  deadline, and one anyone could move would stop meaning anything.
 
 Enforcement is one dependency on the router (`app/main.py`), not a check per
 endpoint, so a route added later is admin-only from the moment it exists. The
@@ -267,6 +271,8 @@ functions and the denormalized path cache stays consistent.
 ## Making it yours
 
 - **Team name** — `PITBOX_TEAM_NAME`, in `.env` or your host's environment
+- **The countdown's look** — `PITBOX_DOOMSDAY=true` shows it as a big red
+  "Doomsday" clock. Off by default; this team's `fly.toml` turns it on
 - **Subsystem template** — `BAJA_TEMPLATE` in `app/seed.py`, a plain nested list
 - **Default tags** — `DEFAULT_TAGS` in the same file
 - **Statuses** — `STATUSES` in `app/models.py` and the matching `Status` literal in

@@ -127,6 +127,11 @@ ORDER_STATUSES = (
 # else is still somebody's job.
 ORDER_CLOSED = frozenset({"received", "denied", "cancelled"})
 
+# What a saved resource is, so a list of forty links can be scanned and
+# filtered. "report" is another team's design report -- the most useful kind
+# of research a Baja team finds.
+RESOURCE_KINDS = ("article", "paper", "report", "video", "datasheet", "forum", "other")
+
 
 class Member(Base):
     """A person on the team: both the assignee list and the login account.
@@ -725,15 +730,68 @@ class PurchaseRequest(Base):
         return self.unit_cost_cents * self.quantity
 
 
-class AppMeta(Base):
-    """Facts about this database itself, as key/value pairs.
+class Resource(Base):
+    """Something useful a teammate found: a design report from another team,
+    a paper on CVT tuning, a video on coping tube, a datasheet.
 
-    It exists for one-time setup that must happen exactly once and survive a
-    crash. "Has the starter Learn library been written?" cannot be inferred
-    from whether its table exists: a boot that creates the tables and then
-    fails before seeding leaves them there, empty, and every later boot would
-    skip the seed for good. Writing a marker here in the SAME commit as the
-    seeded rows makes the two succeed or fail together.
+    Different from Learn on purpose. Learn is the team's own guidance, written
+    and kept by leads. This is the pile of research behind it, and anyone can
+    add to it -- finding things is everyone's job. Each entry belongs to the
+    person who added it: they can edit or remove it, and so can an admin.
+
+    Team-wide, like Learn: research outlives any one season's tree.
+
+    An optional file (a PDF someone downloaded, say) lives in the shared
+    content-addressed blob store, recorded in columns here like a shop drawing
+    -- so file_sha256 is registered in storage.blob_reference_columns().
+    """
+
+    __tablename__ = "resources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # http/https only, validated at the API boundary: it renders as an href.
+    url: Mapped[str | None] = mapped_column(String(2000))
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="other")
+    # Free text, like a shop part's subsystem: "Suspension", "Rules", "CAD".
+    topic: Mapped[str | None] = mapped_column(String(80))
+    # Why it is worth reading, in Markdown -- the part that turns a link dump
+    # into research.
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    file_sha256: Mapped[str | None] = mapped_column(String(64), index=True)
+    file_name: Mapped[str | None] = mapped_column(String(255))
+    file_content_type: Mapped[str | None] = mapped_column(String(120))
+    file_size_bytes: Mapped[int | None] = mapped_column(Integer)
+    file_uploaded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    added_by_id: Mapped[int | None] = mapped_column(ForeignKey("members.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )
+
+    added_by: Mapped[Member | None] = relationship()
+
+    @property
+    def has_file(self) -> bool:
+        return bool(self.file_sha256)
+
+    @property
+    def added_by_name(self) -> str | None:
+        return self.added_by.name if self.added_by else None
+
+
+class AppMeta(Base):
+    """Facts and settings about this instance, as key/value pairs.
+
+    Two kinds of thing live here. One-time setup that must happen exactly once
+    and survive a crash: "has the starter Learn library been written?" cannot
+    be inferred from whether its table exists, because a boot that creates the
+    tables and then fails before seeding leaves them there, empty -- so a
+    marker is written in the SAME commit as the seeded rows. And single
+    team-wide settings, like the doomsday countdown, that are one value for
+    the whole instance and not worth a table of their own.
     """
 
     __tablename__ = "app_meta"

@@ -32,6 +32,10 @@ primary_region = "dfw"          # pick one near the team: fly platform regions
 
   PITBOX_COOKIE_SECURE = "true"
 
+  # Our countdown is the Doomsday clock: big, red, and called Doomsday. A
+  # team's taste, not the app's default -- drop this for a plain countdown.
+  PITBOX_DOOMSDAY = "true"
+
   # Set these two with `fly secrets set` or fill them in here -- they are
   # identifiers, not credentials, so either is fine:
   #   PITBOX_ACCESS_TEAM_DOMAIN = "yourteam.cloudflareaccess.com"

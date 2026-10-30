@@ -10,9 +10,11 @@ import { FlowView } from './components/FlowView'
 import { LearnView } from './components/LearnView'
 import { OrdersView } from './components/OrdersView'
 import { TeamPanel } from './components/TeamPanel'
+import { ResourcesView } from './components/ResourcesView'
 import { ShopView } from './components/ShopView'
 import { TimelineView } from './components/TimelineView'
 import { TopBar, type Workspace } from './components/TopBar'
+import { TreeBar } from './components/TreeBar'
 import { TreeView } from './components/TreeView'
 import { useToast } from './hooks/useToast'
 import {
@@ -486,17 +488,11 @@ export default function App() {
   return (
     <>
       <TopBar
-        projects={projects}
-        projectId={projectId}
         currentUser={currentUser}
         authMode={authMode}
         isAdmin={isAdmin}
         workspace={workspace}
         onWorkspace={goWorkspace}
-        onSwitch={switchProject}
-        onNew={() => void newProject()}
-        onClone={() => void cloneProject()}
-        onDelete={() => void deleteProject()}
         onEditName={() =>
           void setMyName(currentUser?.name ?? '', false)
         }
@@ -510,6 +506,8 @@ export default function App() {
           }
           void api.logout().then(() => { window.location.href = '/login' })
         }}
+        onError={showError}
+        onToast={show}
       />
 
       {/* The timeline is its own workspace: full width, and without the
@@ -534,7 +532,7 @@ export default function App() {
       )}
 
       {workspace === 'timeline' && (projectId == null || !tree) && (
-        <p className="loading">No tree selected, so there is nothing to plan yet.</p>
+        <p className="loading">No tree selected, so there is nothing to plan yet. Pick one in Parts.</p>
       )}
 
       {/* The cut list is its own section for the same reason as the timeline:
@@ -560,7 +558,7 @@ export default function App() {
       )}
 
       {workspace === 'shop' && (projectId == null || !tree) && (
-        <p className="loading">No tree selected, so there is nothing to make yet.</p>
+        <p className="loading">No tree selected, so there is nothing to make yet. Pick one in Parts.</p>
       )}
 
       {/* Orders belong to a tree, like the cut list: a season's budget is
@@ -582,7 +580,7 @@ export default function App() {
       )}
 
       {workspace === 'orders' && (projectId == null || !tree) && (
-        <p className="loading">No tree selected, so there is nothing to order yet.</p>
+        <p className="loading">No tree selected, so there is nothing to order yet. Pick one in Parts.</p>
       )}
 
       {/* Learn is the team's, not a tree's: it does not wait for a project.
@@ -597,8 +595,32 @@ export default function App() {
         />
       )}
 
+      {/* Resources is the team's too -- research outlives a season's tree.
+          Topic suggestions come from the open tree when there is one. */}
+      {workspace === 'resources' && (
+        <ResourcesView
+          currentUserId={currentUser?.id ?? null}
+          isAdmin={isAdmin}
+          topicSuggestions={(tree?.nodes ?? []).filter((n) => n.depth === 1).map((n) => n.name)}
+          onError={showError}
+          onToast={show}
+        />
+      )}
+
       {workspace === 'breakdown' && (
       <>
+      {/* Which tree, and what to do with a whole tree. Here rather than in
+          the top bar: it is about the parts breakdown, and the other sections
+          follow whatever is picked here. */}
+      <TreeBar
+        projects={projects}
+        projectId={projectId}
+        isAdmin={isAdmin}
+        onSwitch={switchProject}
+        onNew={() => void newProject()}
+        onClone={() => void cloneProject()}
+        onDelete={() => void deleteProject()}
+      />
       <FilterBar
         tags={tree?.tags ?? []}
         members={tree?.members ?? []}

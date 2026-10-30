@@ -6,10 +6,25 @@ no migration; sending a bogus one still gets a 422 with a helpful message.
 """
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+
+
+def _as_utc(value: datetime) -> datetime:
+    """Mark a stored timestamp as the UTC it already is.
+
+    SQLite hands timestamps back without a timezone, though every one here is
+    written in UTC. Sent as-is they arrive with no "Z", and a browser reads a
+    zone-less timestamp as LOCAL time -- so on a Pacific evening, something
+    added today showed as added tomorrow.
+    """
+    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+
+
+# For any timestamp the UI shows to a person.
+UtcDateTime = Annotated[datetime, AfterValidator(_as_utc)]
 
 NodeType = Literal["vehicle", "subsystem", "assembly", "part"]
 Status = Literal[
@@ -25,6 +40,7 @@ LearnIcon = Literal["gear", "spring", "wheel", "weld", "cube", "book"]
 OrderStatus = Literal[
     "requested", "approved", "ordered", "shipped", "received", "denied", "cancelled",
 ]
+ResourceKind = Literal["article", "paper", "report", "video", "datasheet", "forum", "other"]
 AttachmentKind = Literal[
     "datasheet", "cad", "drawing", "pcb", "firmware", "analysis", "photo", "other"
 ]
@@ -644,7 +660,7 @@ class LearnPageOut(BaseModel):
     references: list[LearnReference] = Field(default_factory=list)
     position: int = 0
     version: int = 1
-    updated_at: datetime | None = None
+    updated_at: UtcDateTime | None = None
     updated_by_id: int | None = None
     # Resolved by the router, so "last edited by" survives without the client
     # needing the roster.
@@ -746,5 +762,104 @@ class PurchaseRequestOut(BaseModel):
     tracking_number: str | None = None
     history: list[OrderEvent] = Field(default_factory=list)
     requested_by_id: int | None = None
-    created_at: datetime
-    updated_at: datetime
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+
+
+# --- resources ---------------------------------------------------------------
+
+class _ResourceFields(BaseModel):
+    """The optional parts of a resource. Shared by create and edit."""
+
+    url: str | None = Field(default=None, max_length=2000)
+    topic: str | None = Field(default=None, max_length=80)
+    # Markdown, rendered by the same parser as Learn -- nothing typed here
+    # can become markup.
+    notes: str | None = Field(default=None, max_length=8000)
+
+    @field_validator("url")
+    @classmethod
+    def _only_web_urls(cls, v: str | None) -> str | None:
+        return _optional_url(v)
+
+    @field_validator("topic", "notes")
+    @classmethod
+    def _tidy(cls, v: str | None) -> str | None:
+        return _blank_to_none(v)
+
+
+class ResourceIn(_ResourceFields):
+    title: str = Field(min_length=1, max_length=200)
+    kind: ResourceKind = "other"
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str) -> str:
+        return _required(v, "A resource title")
+
+
+class ResourceUpdate(_ResourceFields):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    kind: ResourceKind | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _tidy_title(cls, v: str | None) -> str | None:
+        return None if v is None else _required(v, "A resource title")
+
+
+class ResourceOut(BaseModel):
+    model_config = ORM
+    id: int
+    title: str
+    url: str | None = None
+    kind: ResourceKind = "other"
+    topic: str | None = None
+    notes: str | None = None
+    added_by_id: int | None = None
+    # Resolved on the server, so the card says who found it even if that
+    # person has since left the roster the client loaded.
+    added_by_name: str | None = None
+    created_at: UtcDateTime
+    updated_at: UtcDateTime
+
+    # The file. Its storage address is deliberately not exposed, as for
+    # shop drawings.
+    has_file: bool = False
+    file_name: str | None = None
+    file_content_type: str | None = None
+    file_size_bytes: int | None = None
+
+
+# --- the doomsday countdown --------------------------------------------------
+
+class CountdownIn(BaseModel):
+    """What the top-bar timer counts down to -- usually competition."""
+
+    label: str = Field(min_length=1, max_length=60)
+    # An instant, not a date: a countdown that ticks seconds has to agree on
+    # which second. Must carry a timezone, so "8 am" is never quietly read
+    # as 8 am UTC -- the browser sends the moment it means.
+    at: datetime
+
+    @field_validator("label")
+    @classmethod
+    def _tidy_label(cls, v: str) -> str:
+        return _required(v, "The countdown label")
+
+    @field_validator("at")
+    @classmethod
+    def _needs_timezone(cls, v: datetime) -> datetime:
+        if v.tzinfo is None or v.utcoffset() is None:
+            raise ValueError("The time needs a timezone, e.g. 2027-05-01T08:00:00-07:00")
+        return v
+
+
+class CountdownOut(BaseModel):
+    """Both null when no admin has set one yet."""
+
+    label: str | None = None
+    at: datetime | None = None
+    # How this site shows the timer (settings.doomsday), not part of what an
+    # admin sets: it comes from the deployment, so it is there even when unset.
+    doomsday: bool = False

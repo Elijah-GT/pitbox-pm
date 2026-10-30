@@ -389,6 +389,19 @@ MEMBER_WRITABLE: frozenset[tuple[str, str]] = frozenset({
     # for leads, the same as adding or deleting them. Every member can read
     # them. Absent from this list means admin-only, so to open any of it back
     # up, add the route here rather than loosening the router.
+    #
+    # The doomsday countdown (/api/countdown) is absent for the same reason:
+    # it is the team's deadline, set by leads.
+    #
+    # Resources -- research the team finds. Anyone may ADD, because finding
+    # things is everyone's job. Editing, removing and attaching a file are
+    # here too, but the router narrows them by row: only whoever added it, or
+    # an admin -- see app/routers/resources.py.
+    ("POST", "/api/resources"),
+    ("PATCH", "/api/resources/{resource_id}"),
+    ("DELETE", "/api/resources/{resource_id}"),
+    ("PUT", "/api/resources/{resource_id}/file"),
+    ("DELETE", "/api/resources/{resource_id}/file"),
 })
 
 # Used by both guards below, because a member hitting either one has the same

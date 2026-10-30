@@ -133,9 +133,14 @@ def blob_reference_columns():
     """
     # Local import: storage must not pull in the ORM at module load, or
     # models -> storage -> models becomes a cycle the day models needs a helper.
-    from .models import Attachment, LearnImage, MfgPart
+    from .models import Attachment, LearnImage, MfgPart, Resource
 
-    return (Attachment.sha256, MfgPart.drawing_sha256, LearnImage.sha256)
+    return (
+        Attachment.sha256,
+        MfgPart.drawing_sha256,
+        LearnImage.sha256,
+        Resource.file_sha256,
+    )
 
 
 def still_referenced(db, sha256: str) -> bool:

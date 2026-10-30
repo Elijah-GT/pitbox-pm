@@ -968,24 +968,9 @@ a {
        placeholder; it slides up as a sheet only once a part is tapped
      * touch targets go to 44px, the iOS/Android minimum
    ====================================================================== */
-/* --- read-only marker and the Team panel ---------------------------------- */
-
-/* Sits where the New Tree / Delete buttons would be for an admin, so their
-   absence is explained rather than looking like a half-loaded toolbar. It
-   names the role rather than claiming "view only", which stopped being true
-   once members could edit. */
-.role-badge {
-  align-self: center;
-  font-family: var(--font-head);
-  font-size: 0.62rem;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 2px 6px;
-  white-space: nowrap;
-}
+/* --- the Team panel -------------------------------------------------------- */
+/* (The old "Member" role badge that sat in the top bar is gone: your role is
+   now stated in the account menu under your name -- see TopBar.tsx.) */
 
 .modal-backdrop {
   position: fixed;
@@ -1613,8 +1598,182 @@ a {
   font-weight: 600;
 }
 
+/* ===== Top bar: sections, account menu ===== */
+/* The sections read as navigation -- quiet text with an underline under the
+   one you are in -- rather than a row of buttons competing with the actions. */
 .workspace-switch {
   flex: none;
+  align-self: stretch;
+  display: flex;
+  gap: 2px;
+}
+.workspace-switch button {
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 0 12px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.workspace-switch button:hover {
+  color: var(--text);
+}
+.workspace-switch button.active {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+.workspace-switch button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -6px;
+  border-radius: 6px;
+}
+
+.whoami-name {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.whoami-caret {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+.whoami .count {
+  color: var(--brand-dim);
+  font-size: 0.68rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.whoami[aria-expanded='true'] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+/* --- dropdown menus (Menu.tsx) --- */
+.menu {
+  position: relative;
+  display: inline-flex;
+}
+.menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  z-index: 55;
+  display: flex;
+  flex-direction: column;
+  min-width: 220px;
+  max-width: min(320px, calc(100vw - 24px));
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, 0.9);
+}
+.menu-pop.align-right {
+  right: 0;
+}
+.menu-pop.align-left {
+  left: 0;
+}
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.86rem;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.menu-item:hover:not(:disabled),
+.menu-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+  outline: none;
+}
+.menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.menu-item.danger {
+  color: #ffb4b4;
+}
+.menu-item.danger:hover:not(:disabled) {
+  background: #37222a;
+  color: #ffd2d2;
+}
+.menu-sep {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 4px 0;
+}
+.menu-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.menu-head strong {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+.menu-role {
+  margin-top: 6px;
+  color: var(--text-dim);
+  line-height: 1.45;
+}
+
+/* ===== Tree bar: the top of Parts ===== */
+/* Which tree you are in and what you can do to a whole tree. One slim row,
+   so the breakdown below keeps nearly all the height it had. */
+.treebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.treebar-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.treebar-label {
+  font-family: var(--font-head);
+  font-size: 0.72rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.treebar-pick .input {
+  min-width: 260px;
+  max-width: 440px;
+  font-weight: 600;
+}
+.treebar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* ===== The cut list (ShopView) ===== */
@@ -3039,6 +3198,266 @@ a.learn-ref:hover {
   margin-right: auto;
 }
 
+/* ===== The doomsday countdown (Countdown.tsx) ===== */
+/* Quiet a month out, amber inside 30 days, brand red inside the last week --
+   urgency by colour only, no animation, so it never pulls focus from work. */
+
+.doomsday {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  white-space: nowrap;
+}
+button.doomsday {
+  cursor: pointer;
+}
+button.doomsday:hover {
+  border-color: #3a404b;
+}
+.doomsday-label {
+  font-family: var(--font-head);
+  font-size: 0.68rem;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.doomsday-time {
+  font-family: var(--font-mono);
+  font-size: 0.92rem;
+  font-weight: 600;
+  /* Fixed-width digits, so the timer does not shuffle sideways every second. */
+  font-variant-numeric: tabular-nums;
+}
+.doomsday-time small {
+  margin-left: 1px;
+  color: var(--text-dim);
+  font-size: 0.72em;
+}
+.doomsday.is-near {
+  border-color: rgba(245, 158, 11, 0.5);
+}
+.doomsday.is-near .doomsday-time {
+  color: #fbbf24;
+}
+.doomsday.is-close,
+.doomsday.is-here {
+  border-color: rgba(239, 43, 69, 0.6);
+  background: rgba(239, 43, 69, 0.08);
+}
+.doomsday.is-close .doomsday-time,
+.doomsday.is-here .doomsday-time {
+  color: var(--brand-dim);
+}
+
+/* PITBOX_DOOMSDAY: the same timer as the Doomsday clock -- as big as the top
+   bar holds, and red whatever the date, so none of the urgency steps above
+   apply. A deep red rather than --brand: white on #c8102e is 5.9:1, so even
+   the small label clears AA, where on #ef2b45 it would be 4.1:1. */
+.doomsday.is-doomsday {
+  align-items: center;
+  gap: 10px;
+  padding: 3px 14px;
+  border-color: var(--brand);
+  background: #c8102e;
+  color: #fff;
+  box-shadow: 0 0 18px rgba(239, 43, 69, 0.35);
+}
+button.doomsday.is-doomsday:hover {
+  border-color: #ff6b7d;
+  background: #d8163a;
+}
+.doomsday.is-doomsday .doomsday-label {
+  font-size: 1rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: #fff;
+}
+.doomsday.is-doomsday .doomsday-time {
+  font-size: 1.55rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #fff;
+}
+.doomsday.is-doomsday .doomsday-time small {
+  color: rgba(255, 255, 255, 0.8);
+}
+.topbar-actions {
+  align-items: center;
+}
+.doomsday-editor {
+  width: min(440px, 100%);
+}
+.doomsday-when {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* ===== Resources (ResourcesView) ===== */
+/* Cards like a reading list: what it is, why it matters, who found it. */
+
+.resources-blurb {
+  max-width: 80ch;
+  margin-top: -6px;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.orders-bar select.input {
+  max-width: 180px;
+}
+.res-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 12px;
+  /* Cards keep their own height: one with long notes should not stretch the
+     short ones beside it. */
+  align-items: start;
+}
+.res-grid > .res-form {
+  grid-column: 1 / -1;
+}
+.res-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.res-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.res-kind {
+  color: var(--accent-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.res-topic {
+  padding: 1px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+.res-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.res-title a {
+  color: var(--text);
+  text-decoration: none;
+}
+.res-title a:hover {
+  color: var(--accent-2);
+  text-decoration: underline;
+}
+.res-host {
+  margin-top: -4px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.res-notes .md {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+.res-notes .md > * + * {
+  margin-top: 8px;
+}
+.res-file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-soft);
+  font-size: 0.82rem;
+}
+.res-file a {
+  color: var(--accent-2);
+}
+.res-file a:first-child {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.res-file span {
+  color: var(--text-muted);
+}
+.res-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+.res-actions {
+  display: inline-flex;
+  gap: 4px;
+}
+.res-current-file {
+  color: var(--text-dim);
+  font-size: 0.78rem;
+}
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent-2);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ===== The top bar on a narrower screen ===== */
+/* Six section tabs, the countdown and your name stop fitting on one row a
+   little under 1200px -- sooner with the Doomsday clock or a long name. Rather
+   than let the whole page scroll sideways, the tabs drop to a row of their
+   own. The phone block further down builds on this. */
+@media (max-width: 1200px) {
+  :root {
+    /* Two rows now; the Learn sidebar sizes itself to the space left below. */
+    --topbar-h: 89px;
+  }
+  .topbar {
+    height: auto;
+    flex-wrap: wrap;
+    gap: 0 14px;
+    padding: 6px 16px 0;
+  }
+  .topbar-actions {
+    order: 2;
+  }
+  .workspace-switch {
+    order: 3;
+    width: 100%;
+  }
+  .workspace-switch button {
+    min-height: 44px;
+  }
+}
+
 /* ===== Orders and Learn on a phone ===== */
 /* Its own block, after the rules above so these win; the app-wide phone
    block below does not touch any of these classes. */
@@ -3174,17 +3593,6 @@ a.learn-ref:hover {
   .learn-textarea {
     min-height: 40dvh;
   }
-  /* Five sections no longer fit beside the logo; scroll them sideways
-     rather than squeezing every label. */
-  .workspace-switch {
-    max-width: 100%;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .workspace-switch button {
-    white-space: nowrap;
-    min-height: 40px;
-  }
 }
 
 @media (max-width: 720px) {
@@ -3265,37 +3673,93 @@ a.learn-ref:hover {
     min-height: 36px;
   }
 
-  /* --- top bar: two rows, actions scroll sideways rather than truncate --- */
+  /* --- top bar: logo and account on one row, the sections on the next --- */
   .topbar {
     height: auto;
     flex-wrap: wrap;
+    gap: 0 8px;
+    padding: 6px 12px 0;
+  }
+  /* The account button stays on a phone, unlike the old top bar where the
+     name was hidden: Sign out now lives in its menu. */
+  .whoami {
+    min-height: 40px;
+  }
+  .whoami-name {
+    max-width: 96px;
+  }
+  /* The first row has to hold the logo, the countdown and your name. Your
+     role is stated in the account menu, and the countdown's label is in its
+     tooltip, so both make way. */
+  .whoami .admin-pip,
+  .doomsday-label {
+    display: none;
+  }
+  .doomsday {
+    padding: 4px 8px;
+  }
+  .doomsday-time {
+    font-size: 0.84rem;
+  }
+  /* The Doomsday clock is too big for that row, so it takes one of its own,
+     a red strip between the logo and the sections. That means it has to be a
+     row of the top bar itself, not of the actions box: `contents` lifts the
+     timer and the account button up into the top bar, the brand's auto margin
+     pushes them right, and `order` puts each on its row. */
+  .topbar-actions {
+    display: contents;
+  }
+  .brand {
+    margin-right: auto;
+  }
+  .topbar-actions > * {
+    order: 2;
+  }
+  .topbar-actions > .doomsday.is-doomsday {
+    order: 3;
+    flex: 1 0 100%;
+    justify-content: center;
+    margin-top: 6px;
+    padding: 4px 12px;
+  }
+  .doomsday.is-doomsday .doomsday-label {
+    display: inline;
+    font-size: 0.9rem;
+  }
+  .doomsday.is-doomsday .doomsday-time {
+    font-size: 1.3rem;
+  }
+  .workspace-switch {
+    order: 4;
+    width: 100%;
+    align-self: auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .workspace-switch button {
+    flex: 1 0 auto;
+    min-height: 44px;
+    padding: 0 10px;
+  }
+
+  /* --- tree bar: the picker takes what the two buttons leave --- */
+  .treebar {
     gap: 8px;
     padding: 8px 12px;
   }
-  .topbar > select.input {
-    order: 3;
+  .treebar-label {
+    display: none;
+  }
+  .treebar-pick {
+    flex: 1 1 auto;
+  }
+  .treebar-pick .input {
+    min-width: 0;
     width: 100%;
     min-height: 44px;
   }
-  .topbar-actions {
-    order: 2;
-    margin-left: auto;
-    overflow-x: auto;
-    /* Let the row scroll instead of squashing the project picker to a stub. */
-    max-width: 100%;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .topbar-actions::-webkit-scrollbar {
-    display: none;
-  }
-  .topbar-actions .btn {
-    white-space: nowrap;
-    min-height: 40px;
-  }
-  /* The signed-in name is not worth a row of its own on a 390px screen. */
-  .whoami {
-    display: none;
+  .treebar-actions .btn {
+    min-height: 44px;
   }
 
   /* --- filter bar: collapsed by default --- */

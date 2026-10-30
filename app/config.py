@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # Shown in the page title and /api/health. Set PITBOX_TEAM_NAME to your own.
     team_name: str = "Baja SAE Team"
 
+    # Shows the top-bar countdown as the Doomsday clock: big, red, and called
+    # "Doomsday" whatever the date is named. A team's own taste rather than a
+    # sensible default, so it is off unless a deployment asks for it -- this
+    # team's does, in fly.toml. Changes only how the timer looks.
+    doomsday: bool = False
+
     # sqlite:///./pitbox.db for a laptop or a small shop server.
     # postgresql+psycopg://user:pass@host/db when you outgrow it — nothing else changes.
     database_url: str = "sqlite:///./pitbox.db"
